@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <numeric>
 
 #include "../../libs/text.h"
 #include "../../libs/texture.h"
@@ -21,7 +22,7 @@ void FPSCounter::update() {
 }
 
 float FPSCounter::get_fps() const {
-    const float sum = std::ranges::fold_left(frameTimes, 0.0f, std::plus{});
+    const float sum = std::accumulate(std::begin(frameTimes), std::end(frameTimes), 0.0f);
     float avgFrameTime = sum / SAMPLE_SIZE;
     if (!(avgFrameTime > 0.0f)) {
         return 0.0f;

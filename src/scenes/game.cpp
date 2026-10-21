@@ -341,9 +341,6 @@ std::optional<Screens> GameScreen::global_keys() {
         return on_screen_end(Screens::SONG_SELECT);
     }
 
-    // if (check_key_pressed(global_data.config->keys.pause_key)) {
-    //     toggle_pause();
-    // }
 
     return std::nullopt;
 }

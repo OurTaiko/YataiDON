@@ -92,6 +92,25 @@ static std::string int_display(int v) {
     return std::to_string(v);
 }
 
+#ifdef YATAIDON_PLATFORM_PS5
+RefreshOptionBox::RefreshOptionBox(const std::string& name, const std::string& description, const std::string& path)
+    : BaseOptionBox(name, description, path), value(config_ref.get_int()) {
+    labels[0] = std::make_unique<OutlinedText>("60", option_font_size(), ray::WHITE, ray::BLACK, false, 4, -4);
+    labels[1] = std::make_unique<OutlinedText>("120", option_font_size(), ray::WHITE, ray::BLACK, false, 4, -4);
+}
+void RefreshOptionBox::confirm() { config_ref.set_int(value); }
+void RefreshOptionBox::draw() {
+    draw_base();
+    for (int i = 0; i < 2; ++i) {
+        const bool selected = value == (i == 0 ? 60 : 120);
+        tex.draw_texture(selected ? t_button_on : t_button_off, {.index = i});
+        float x = t_button_on->x[i] + (t_button_on->x2[i] - labels[i]->width) / 2;
+        float y = t_button_on->y[i] + (t_button_on->y2[i] - labels[i]->height) / 2;
+        labels[i]->draw({.x = x, .y = y});
+    }
+}
+#endif
+
 IntOptionBox::IntOptionBox(const std::string& name, const std::string& description, const std::string& path,
                            const std::map<std::string, std::string>& values)
     : BaseOptionBox(name, description, path), value(config_ref.get_int()), value_text(nullptr),

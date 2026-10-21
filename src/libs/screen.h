@@ -95,8 +95,19 @@ public:
     virtual ~Screen() = default;
 
     virtual void on_screen_start() {
+#ifdef YATAIDON_PLATFORM_PS5
+        const double begin_ms = get_current_ms();
+        spdlog::info("PS5 loading {} textures", screen_name);
+#endif
         tex.load_screen_textures(screen_name);
+#ifdef YATAIDON_PLATFORM_PS5
+        const double audio_ms = get_current_ms();
+        spdlog::info("PS5 {} textures took {:.0f} ms; loading sounds", screen_name, audio_ms - begin_ms);
+#endif
         audio.load_screen_sounds(screen_name);
+#ifdef YATAIDON_PLATFORM_PS5
+        spdlog::info("PS5 {} sounds took {:.0f} ms", screen_name, get_current_ms() - audio_ms);
+#endif
     }
 
     virtual Screens on_screen_end(Screens next_screen) {

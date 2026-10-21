@@ -24,6 +24,7 @@ public:
     bool music_playing = false;
     struct PreviewLoad {
         std::atomic<bool> done{false};
+        std::atomic<bool> cancelled{false};
         bool ok = false;
         AudioEngine::PreparedPCM pcm;
     };
@@ -46,6 +47,7 @@ public:
 
     SongBox(const fs::path& path, const BoxDef& box_def, SongParser parser);
     ~SongBox() override {
+        if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
         if (preview_thread.joinable()) {
             preview_thread.join();
         }

@@ -1,8 +1,21 @@
 #include "input.h"
+#ifdef YATAIDON_PLATFORM_PS5
+#include "../platform/ps5_controls.h"
+static bool ps5_menu_input(PlayerNum player) {
+    return !ps5_controls::gameplay(global_data.current_screen) &&
+           (player == PlayerNum::ALL || player == global_data.player_num);
+}
+static bool ps5_menu_press(ps5_controls::MenuAction action, float* strength) {
+    for (int button = 1; button <= 18; ++button)
+        if (ps5_controls::menu_action(button) == action && check_key_pressed(10000 + button, strength)) return true;
+    return false;
+}
+#endif
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -14,7 +27,7 @@
 #include "texture.h"
 #include "time.h"
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
 #include <libremidi/libremidi.hpp>
 #ifdef _WIN32
 #include <roapi.h>
@@ -164,6 +177,10 @@ bool is_kat_held(bool left, PlayerNum player_num) {
 }
 
 bool is_l_don_pressed(PlayerNum player_num, float* strength) {
+#ifdef YATAIDON_PLATFORM_PS5
+    if (!ps5_controls::gameplay(global_data.current_screen))
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, strength);
+#endif
     if (player_num == PlayerNum::P1) {
         return is_input_key_pressed(global_data.config->keys_1p.left_don, global_data.config->gamepad_1p.left_don,
                                     strength) ||
@@ -188,6 +205,10 @@ bool is_l_don_pressed(PlayerNum player_num, float* strength) {
 }
 
 bool is_r_don_pressed(PlayerNum player_num, float* strength) {
+#ifdef YATAIDON_PLATFORM_PS5
+    if (!ps5_controls::gameplay(global_data.current_screen))
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, strength);
+#endif
     if (player_num == PlayerNum::P1) {
         return is_input_key_pressed(global_data.config->keys_1p.right_don, global_data.config->gamepad_1p.right_don,
                                     strength) ||
@@ -212,18 +233,34 @@ bool is_r_don_pressed(PlayerNum player_num, float* strength) {
 }
 
 bool menu_left_pressed(PlayerNum p) {
+#ifdef YATAIDON_PLATFORM_PS5
+    return is_l_kat_pressed(p) || ray::IsKeyPressed(ray::KEY_LEFT);
+#else
     return is_l_kat_pressed(p) || (p != PlayerNum::P2 && ray::IsKeyPressed(ray::KEY_LEFT));
+#endif
 }
 
 bool menu_right_pressed(PlayerNum p) {
+#ifdef YATAIDON_PLATFORM_PS5
+    return is_r_kat_pressed(p) || ray::IsKeyPressed(ray::KEY_RIGHT);
+#else
     return is_r_kat_pressed(p) || (p != PlayerNum::P2 && ray::IsKeyPressed(ray::KEY_RIGHT));
+#endif
 }
 
 bool menu_confirm_pressed(PlayerNum p) {
+#ifdef YATAIDON_PLATFORM_PS5
+    return is_l_don_pressed(p) || is_r_don_pressed(p) || ray::IsKeyPressed(ray::KEY_ENTER);
+#else
     return is_l_don_pressed(p) || is_r_don_pressed(p) || (p != PlayerNum::P2 && ray::IsKeyPressed(ray::KEY_ENTER));
+#endif
 }
 
 bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
+#ifdef YATAIDON_PLATFORM_PS5
+    if (!ps5_controls::gameplay(global_data.current_screen))
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Left, strength);
+#endif
     if (player_num == PlayerNum::P1) {
         return is_input_key_pressed(global_data.config->keys_1p.left_kat, global_data.config->gamepad_1p.left_kat,
                                     strength) ||
@@ -248,6 +285,10 @@ bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
 }
 
 bool is_r_kat_pressed(PlayerNum player_num, float* strength) {
+#ifdef YATAIDON_PLATFORM_PS5
+    if (!ps5_controls::gameplay(global_data.current_screen))
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Right, strength);
+#endif
     if (player_num == PlayerNum::P1) {
         return is_input_key_pressed(global_data.config->keys_1p.right_kat, global_data.config->gamepad_1p.right_kat,
                                     strength) ||
@@ -441,6 +482,18 @@ void poll_touch_once() {
 // Scan all keyboard keys once and push press/release events.
 // Used by the polling thread on desktop and called directly per-frame on web.
 void poll_keyboard_once() {
+#ifdef YATAIDON_PLATFORM_PS5
+    static int logged_controllers = -1;
+    const int controllers = SDL_NumJoysticks();
+    if (controllers != logged_controllers) {
+        std::fprintf(stderr, "[yataidon-ps5] SDL controllers=%d error=%s\n", controllers, SDL_GetError());
+        for (int i = 0; i < controllers; ++i)
+            std::fprintf(stderr, "[yataidon-ps5] pad %d name=%s mapped=%d raylib=%d\n", i,
+                         SDL_JoystickNameForIndex(i) ? SDL_JoystickNameForIndex(i) : "unknown",
+                         SDL_IsGameController(i), ray::IsGamepadAvailable(i));
+        logged_controllers = controllers;
+    }
+#endif
     if (is_input_locked()) {
         return;
     }
@@ -494,6 +547,17 @@ void poll_keyboard_once() {
     }
 
     refresh_sdl_joysticks();
+#ifdef YATAIDON_PLATFORM_PS5
+    static std::array<bool, 4> previous_touchpad{};
+    for (int i = 0; i < 4; ++i) {
+        SDL_GameController* controller = i < SDL_NumJoysticks()
+            ? SDL_GameControllerFromInstanceID(SDL_JoystickGetDeviceInstanceID(i)) : nullptr;
+        const bool down = controller && SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_TOUCHPAD);
+        if (down && !previous_touchpad[i]) local_pressed.push_back(10018);
+        if (!down && previous_touchpad[i]) local_released.push_back(10018);
+        previous_touchpad[i] = down;
+    }
+#endif
     constexpr float JOYSTICK_AXIS_THRESHOLD = 0.5f;
 
     for (auto& [joy_id, joy] : sdl_joysticks) {
@@ -540,11 +604,24 @@ void poll_keyboard_once() {
         }
     }
 
+#ifdef YATAIDON_PLATFORM_PS5
+    // SDL's startup-added event can expose an already-open controller in more
+    // than one raylib slot. One physical edge must not toggle setup twice.
+    std::ranges::sort(local_pressed);
+    local_pressed.erase(std::unique(local_pressed.begin(), local_pressed.end()), local_pressed.end());
+    std::ranges::sort(local_released);
+    local_released.erase(std::unique(local_released.begin(), local_released.end()), local_released.end());
+#endif
+
     // Remember the newest controller press separately from pressed_keys so
     // the keybind screen can read it: the pressed_keys entry is consumed by
     // whatever navigates the menu before the option box ever sees it.
     for (int vkey : local_pressed) {
         if (vkey >= GAMEPAD_VKEY_BASE && vkey < AXIS_VKEY_BASE) {
+#ifdef YATAIDON_PLATFORM_PS5
+            static int logged_presses = 0;
+            if (logged_presses++ < 8) std::fprintf(stderr, "[yataidon-ps5] button=%d\n", vkey - GAMEPAD_VKEY_BASE);
+#endif
             last_gamepad_vkey.store(vkey, std::memory_order_relaxed);
             break;
         }
@@ -593,7 +670,7 @@ void submit_gamepad_button_press(int button, float strength) {
     pressed_keys.emplace(vkey, std::max(strength, 0.0f));
 }
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
 namespace {
 
     struct MidiPortEvent {
@@ -671,7 +748,7 @@ void start_midi_input(const MidiConfig& config) {
     if (config.device.empty()) {
         return;
     }
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
     if (midi_input) {
         spdlog::warn("MIDI input listener was already started");
         return;
@@ -755,7 +832,7 @@ void start_midi_input(const MidiConfig& config) {
 }
 
 void process_midi_events() {
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
     if (!midi_input || !midi_input->events_pending.exchange(false, std::memory_order_acquire)) {
         return;
     }
@@ -819,7 +896,7 @@ void process_midi_events() {
 }
 
 void shutdown_midi_input() {
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
     midi_input.reset();
 #endif
 }
@@ -834,6 +911,18 @@ void input_polling_thread() {
 
 bool check_key_pressed(int key, float* strength) {
     std::scoped_lock lock(input_mutex);
+#ifdef YATAIDON_PLATFORM_PS5
+    if (global_data.config) {
+        if (key != 0 && key == global_data.config->keys.restart_key &&
+            ps5_controls::gameplay(global_data.current_screen) && pressed_keys.contains(10015)) {
+            key = 10015;
+        } else if (key != 0 && key == global_data.config->keys.back_key) {
+            if (pressed_keys.contains(10018)) key = 10018;
+            else if (!ps5_controls::gameplay(global_data.current_screen) && pressed_keys.contains(10006))
+                key = 10006;
+        }
+    }
+#endif
     auto it = pressed_keys.find(key);
     if (it != pressed_keys.end()) {
         if (strength) {

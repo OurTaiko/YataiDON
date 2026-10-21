@@ -1,0 +1,10 @@
+// Symbol IDs generated from public function names using the native title NID algorithm.
+PS5_VDEC_SYMBOL(QueryComputeMemoryInfo, "RnDibcGCPKw")
+PS5_VDEC_SYMBOL(AllocateComputeQueue, "eD+X2SmxUt4")
+PS5_VDEC_SYMBOL(ReleaseComputeQueue, "UvtA3FAiF4Y")
+PS5_VDEC_SYMBOL(QueryDecoderMemoryInfo, "qqMCwlULR+E")
+PS5_VDEC_SYMBOL(CreateDecoder, "CNNRoRYd8XI")
+PS5_VDEC_SYMBOL(DeleteDecoder, "jwImxXRGSKA")
+PS5_VDEC_SYMBOL(Reset, "wJXikG6QFN8")
+PS5_VDEC_SYMBOL(Decode, "852F5+q6+iM")
+PS5_VDEC_SYMBOL(Flush, "l1hXwscLuCY")

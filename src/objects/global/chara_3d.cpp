@@ -13,6 +13,9 @@
 #include "../../libs/camera_utils.h"
 #include "../../libs/filesystem.h"
 #include "../../libs/scores.h"
+#ifdef YATAIDON_PLATFORM_PS5
+#include "../../platform/ps5_outline_shader.h"
+#endif
 namespace ray {
 #include <raymath.h>
 }
@@ -412,10 +415,20 @@ void Chara3D::load_part(const fs::path& model_path, const fs::path& anim_path, b
 static void init_shaders(ray::Shader& outline_fxaa_shader, int& outline_fxaa_size_loc, int& outline_fxaa_thickness_loc,
                          ray::Shader& null_shader, ray::Shader& face_shader, ray::Shader& cutout_shader,
                          ray::Shader& outline_shader, bool& use_render_textures) {
+#ifdef YATAIDON_PLATFORM_PS5
+    char* vertex_source = ray::LoadFileText("shader/pass.vs");
+    outline_fxaa_shader = ray::LoadShaderFromMemory(vertex_source, ps5_outline_fragment);
+    ray::UnloadFileText(vertex_source);
+#else
     outline_fxaa_shader = load_shader("shader/pass.vs", "shader/outline_fxaa.fs");
+#endif
     outline_fxaa_size_loc = ray::GetShaderLocation(outline_fxaa_shader, "texSize");
     outline_fxaa_thickness_loc = ray::GetShaderLocation(outline_fxaa_shader, "outlineThickness");
+#ifdef YATAIDON_PLATFORM_PS5
+    float outline_thickness = 1.5f;
+#else
     float outline_thickness = 3.0f;
+#endif
     ray::SetShaderValue(outline_fxaa_shader, outline_fxaa_thickness_loc, &outline_thickness, ray::SHADER_UNIFORM_FLOAT);
 
     null_shader = load_shader(nullptr, "shader/null.fs");
@@ -509,7 +522,9 @@ void Chara3D::set_texture(fs::path& texture_path, int part_index, int material_i
         ray::UnloadTexture(old);
     }
     ray::Texture tex = ray::LoadTexture(texture_path.string().c_str());
+#ifndef YATAIDON_PLATFORM_PS5
     ray::GenTextureMipmaps(&tex);
+#endif
     ray::SetTextureFilter(tex, ray::TEXTURE_FILTER_BILINEAR);
     int map_type = ray::MATERIAL_MAP_DIFFUSE;
     ray::SetMaterialTexture(&parts[part_index].materials[material_index], map_type, tex);
@@ -911,9 +926,14 @@ void Chara3D::draw_3d(float x, float y) {
     }
 }
 
-// Render at 2x and downscale on blit: bilinear-filtered supersampling ahead of the
-// FXAA pass, since raylib render textures have no MSAA path that stays GLES/Android-safe.
+// PS5 uses 100% of the active render output's pixel density. The cropped target
+// saves unused space without reducing resolution; rw/rh come from GetRenderWidth/Height.
+// Other platforms supersample at 2x before the FXAA pass.
+#ifdef YATAIDON_PLATFORM_PS5
+static constexpr float SUPERSAMPLE = 1.0f;
+#else
 static constexpr float SUPERSAMPLE = 2.0f;
+#endif
 
 // Screen rectangle (render pixels) of the posed model: the CPU-skinned vertices (animVertices,
 // see UpdateModelAnimation) through the same transform draw_3d uses, then the orthographic

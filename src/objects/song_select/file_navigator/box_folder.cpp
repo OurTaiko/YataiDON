@@ -203,13 +203,11 @@ void FolderBox::load_text() {
         }
         if (!dir_ec && it != end) {
             box_texture = ray::LoadTexture((it->path()).string().c_str());
-            ray::GenTextureMipmaps(&box_texture.value());
-            ray::SetTextureFilter(box_texture.value(), ray::TEXTURE_FILTER_TRILINEAR);
+            set_preview_texture_filter(&box_texture.value());
         }
     } else if (fs::exists(fs::path(path / "box.png")) && !box_texture.has_value()) {
         box_texture = ray::LoadTexture((path / "box.png").string().c_str());
-        ray::GenTextureMipmaps(&box_texture.value());
-        ray::SetTextureFilter(box_texture.value(), ray::TEXTURE_FILTER_TRILINEAR);
+        set_preview_texture_filter(&box_texture.value());
     }
     text_loaded = true;
 }

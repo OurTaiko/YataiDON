@@ -5,6 +5,13 @@
 #include "../../../libs/audio.h"
 #include "../../../libs/text.h"
 #include "navigator.h"
+#ifdef YATAIDON_PLATFORM_PS5
+#include "../../../libs/latest_worker.h"
+static LatestWorker& preview_worker() {
+    static LatestWorker worker;
+    return worker;
+}
+#endif
 
 namespace {
     double bgm_resume_at = 0.0; // 0 = nothing pending
@@ -88,6 +95,7 @@ std::string SongBox::hash_for(int difficulty) {
 }
 
 void SongBox::reset() {
+    if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
     BaseBox::reset();
     diff_fade_in = (FadeAnimation*)tex.get_animation(12);
     if (audio.is_music_stream_valid("preview")) {
@@ -134,8 +142,7 @@ void SongBox::load_text() {
             ray::UnloadTexture(preimage.value());
         }
         preimage = ray::LoadTexture(parser.metadata.preimage.string().c_str());
-        ray::GenTextureMipmaps(&preimage.value());
-        ray::SetTextureFilter(preimage.value(), ray::TEXTURE_FILTER_TRILINEAR);
+        set_preview_texture_filter(&preimage.value());
     }
     text_loaded = true;
 }
@@ -159,6 +166,24 @@ void SongBox::update(double current_time) {
     // wait that long rather than polling the animation, which the Lua skin now drives.
     bool box_opened = get_current_ms() - bar_open_started_at > 350;
 
+#ifdef YATAIDON_PLATFORM_PS5
+    if ((is_bank || is_stream) && yellow_box_active && !music_playing && !preview_load && !preview_attempted &&
+        get_current_ms() - bar_open_started_at > 250) {
+        preview_attempted = true;
+        preview_load = std::make_shared<PreviewLoad>();
+        preview_worker().submit([state = preview_load, wave = parser.metadata.wave, is_bank] {
+            try {
+                if (!state->cancelled.load(std::memory_order_relaxed)) {
+                    state->ok = is_bank ? audio.prepare_nus3bank_pcm(wave, state->pcm, true)
+                        : audio.prepare_music_pcm(wave, state->pcm, state->cancelled);
+                }
+            } catch (const std::exception& error) {
+                spdlog::warn("Preview decode failed: {}", error.what());
+            }
+            state->done.store(true, std::memory_order_release);
+        });
+    }
+#else
     if (is_bank && yellow_box_active && !music_playing && !preview_load && !preview_attempted &&
         get_current_ms() - bar_open_started_at > 250) {
         preview_attempted = true;
@@ -181,6 +206,7 @@ void SongBox::update(double current_time) {
             audio.seek_music_stream("preview", parser.metadata.demostart);
         }
     }
+#endif
 
     if (preview_load && preview_load->done.load(std::memory_order_acquire) && yellow_box_active && box_opened &&
         !music_playing) {
@@ -231,6 +257,7 @@ void SongBox::release_preview_slot() {
 }
 
 void SongBox::close_box() {
+    if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
     BaseBox::close_box();
     box_opened_at = 0.0;
     if (preview_thread.joinable()) {

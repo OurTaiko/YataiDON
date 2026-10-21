@@ -13,7 +13,7 @@
 #include "android_ca.h"
 #include "sha256.h"
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
 
 #include <cpr/cpr.h>
 

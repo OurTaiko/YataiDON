@@ -991,7 +991,11 @@ void ScriptManager::register_lua_bindings() {
                     preset = VolumePreset::ATTRACT_MODE;
                 }
             }
+#ifdef YATAIDON_PLATFORM_PS5
+            audio.set_sound_loop(name, loop.value_or(name == "bgm" || name.ends_with("_bgm")));
+#else
             audio.set_sound_loop(name, loop.value_or(false));
+#endif
             audio.play_sound(name, preset);
         });
 

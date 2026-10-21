@@ -26,6 +26,10 @@ std::unique_ptr<BaseOptionBox> SettingsBox::make_option_box(const rapidjson::Val
 
     std::string name = opt.HasMember("name") ? localise(opt["name"]) : "";
     std::string desc = opt.HasMember("description") ? localise(opt["description"]) : "";
+#ifdef YATAIDON_PLATFORM_PS5
+    if (path == "video/target_fps")
+        return std::make_unique<RefreshOptionBox>(name, "Select 60 or 120 FPS and matching output Hz. 120 Hz requires a compatible display.", path);
+#endif
 
     std::map<std::string, std::string> values_map;
     if (opt.HasMember("values") && opt["values"].IsObject()) {
@@ -113,6 +117,14 @@ SettingsBox::SettingsBox(const std::string& name, const std::string& label_text,
 
     if (options_json.IsObject()) {
         for (auto it = options_json.MemberBegin(); it != options_json.MemberEnd(); ++it) {
+#ifdef YATAIDON_PLATFORM_PS5
+            const auto& opt = it->value;
+            if (opt.IsObject() && opt.HasMember("path") && opt["path"].IsString()) {
+                const std::string path = opt["path"].GetString();
+                if (path == "video/vsync" || path == "video/fullscreen" || path == "video/borderless" ||
+                    path == "keys/fullscreen_key" || path == "keys/borderless_key") continue;
+            }
+#endif
             try {
                 options.push_back(make_option_box(it->value));
             } catch (const std::exception& e) {

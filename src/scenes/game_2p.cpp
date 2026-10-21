@@ -41,8 +41,8 @@ std::optional<Screens> Game2PScreen::update() {
     }
 
     double current_time = get_current_ms();
-    transition->update(current_time);
     clock.update(current_time);
+    transition->update(current_time);
     update_gameplay(current_time);
     result_transition.update(current_time);
 
@@ -59,15 +59,17 @@ std::optional<Screens> Game2PScreen::update() {
         end_song(end_time, transition_delay, BackgroundNotification::Disabled);
     }
 
-    if (ray::IsKeyPressed(global_data.config->keys.restart_key)) {
+    if (check_key_pressed(global_data.config->keys.restart_key)) {
         restart_song();
     }
     if (check_key_pressed(global_data.config->keys.back_key)) {
         return on_screen_end(Screens::SONG_SELECT_2P);
     }
+#ifndef YATAIDON_PLATFORM_PS5
     if (check_key_pressed(global_data.config->keys.pause_key)) {
         toggle_pause();
     }
+#endif
 
     return std::nullopt;
 }

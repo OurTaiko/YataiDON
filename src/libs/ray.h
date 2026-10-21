@@ -11,6 +11,17 @@ namespace ray {
 #endif
 #include <string>
 
+inline void set_preview_texture_filter(ray::Texture2D* texture) {
+    if (!texture || !ray::IsTextureValid(*texture)) return;
+#ifdef YATAIDON_PLATFORM_PS5
+    // Menu thumbnails do not need a generated mip chain on the native driver.
+    ray::SetTextureFilter(*texture, ray::TEXTURE_FILTER_BILINEAR);
+#else
+    ray::GenTextureMipmaps(texture);
+    ray::SetTextureFilter(*texture, ray::TEXTURE_FILTER_TRILINEAR);
+#endif
+}
+
 inline ray::Shader load_shader(const char* vs_path, const char* fs_path) {
 #if defined(PLATFORM_ANDROID) || defined(YATAIDON_PLATFORM_IOS)
     auto repath = [](const char* p) -> std::string {

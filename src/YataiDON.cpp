@@ -19,7 +19,9 @@
 #include "libs/text.h"
 #include "libs/webcam.h"
 
-#ifdef _WIN32
+#ifdef YATAIDON_PLATFORM_PS5
+#include "platform/platform_ps5.h"
+#elif defined(_WIN32)
 #include "platform/platform_windows.h"
 #elif defined(__ANDROID__)
 #include "platform/platform_android.h"
@@ -388,6 +390,19 @@ static void run_frame() {
     PROFILE_FRAME();
     PROFILE_SCOPE();
     LoopState& L = *g_loop;
+#ifdef YATAIDON_PLATFORM_PS5
+    static int selected_refresh = global_data.config->video.target_fps;
+    const int requested_refresh = global_data.config->video.target_fps == 60 ? 60 : 120;
+    if (requested_refresh != selected_refresh) {
+        int active = ps5_apply_output_refresh(requested_refresh);
+        if (active != 60 && active != 120) active = ps5_output_refresh_hz();
+        // Reflect fallback in settings and avoid retrying a rejected request each frame.
+        selected_refresh = global_data.config->video.target_fps = active;
+        L.target_duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(1.0 / active));
+        L.next_frame_time = std::chrono::steady_clock::now();
+    }
+#endif
 
     g_frame_ms = get_current_ms();
 
@@ -397,7 +412,7 @@ static void run_frame() {
         return;
     }
 #endif
-#if defined(YATAIDON_PLATFORM_IOS) || defined(__EMSCRIPTEN__)
+#if defined(YATAIDON_PLATFORM_IOS) || defined(__EMSCRIPTEN__) || defined(YATAIDON_PLATFORM_PS5)
     poll_keyboard_once(); // no input thread on these platforms
 #endif
     poll_touch_once();
@@ -457,12 +472,31 @@ static void run_frame() {
     }
 
     network.update(g_frame_ms);
+#ifdef YATAIDON_PLATFORM_PS5
+    static Screens traced_screen = Screens::ONBOARDING;
+    static unsigned traced_frames = 0;
+    static double last_trace_ms = -1e9;
+    if (traced_screen != L.current_screen) {
+        traced_screen = L.current_screen;
+        traced_frames = 0;
+    }
+    const bool trace_frame = traced_frames++ < 3 || g_frame_ms - last_trace_ms > 5000;
+    const double update_begin_ms = get_current_ms();
+    if (trace_frame) {
+        last_trace_ms = g_frame_ms;
+        spdlog::info("PS5 frame {}: update begin", L.current_screen);
+    }
+#endif
     std::optional<Screens> next_screen;
     {
         PROFILE_SCOPE_N("screen update");
         PROFILE_ZONE_TEXT(screen->screen_name);
         next_screen = screen->update();
     }
+#ifdef YATAIDON_PLATFORM_PS5
+    const double draw_begin_ms = get_current_ms();
+    if (trace_frame) spdlog::info("PS5 frame {}: update {:.1f} ms; draw begin", traced_screen, draw_begin_ms - update_begin_ms);
+#endif
     sync_text_input();
 
     if (!next_screen.has_value() && debug_menu.requested_screen.has_value()) {
@@ -516,6 +550,10 @@ static void run_frame() {
 
     draw_outer_border(tex.screen_width, tex.screen_height, L.last_color);
 
+#ifdef YATAIDON_PLATFORM_PS5
+    const double present_begin_ms = get_current_ms();
+    if (trace_frame) spdlog::info("PS5 frame {}: draw {:.1f} ms; present begin", traced_screen, present_begin_ms - draw_begin_ms);
+#endif
     ray::EndBlendMode();
     ray::EndMode2D();
     {
@@ -526,6 +564,9 @@ static void run_frame() {
             ray::SwapScreenBuffer();
         }
     }
+#ifdef YATAIDON_PLATFORM_PS5
+    if (trace_frame) spdlog::info("PS5 frame {}: present {:.1f} ms; frame complete", traced_screen, get_current_ms() - present_begin_ms);
+#endif
 
     if (ray::IsKeyPressed(ray::KEY_F12)) {
         static int screenshot_counter = 0;
@@ -562,7 +603,11 @@ static void run_frame() {
 #endif
 }
 
+#ifdef YATAIDON_PLATFORM_PS5
+static int ps5_game_main(int argc, char* argv[]) {
+#else
 int main(int argc, char* argv[]) {
+#endif
     spdlog::info("Starting YataiDON");
     set_working_directory_to_executable();
     const bool had_config = std::filesystem::exists("config.toml");
@@ -575,7 +620,13 @@ int main(int argc, char* argv[]) {
     parse_card_reader_args(argc, argv, global_data.config->card_reader);
     Screens initial_screen = check_args(argc, argv);
     init_scores_manager(global_data.config->general.score_method == ScoreMethod::GEN3);
-    unsigned int flags = ray::FLAG_WINDOW_RESIZABLE;
+    unsigned int flags = 0;
+#ifndef YATAIDON_PLATFORM_PS5
+    flags |= ray::FLAG_WINDOW_RESIZABLE;
+#endif
+#ifdef YATAIDON_PLATFORM_PS5
+    global_data.config->video.vsync = true;
+#endif
     if (global_data.config->video.vsync) {
         flags |= ray::FLAG_VSYNC_HINT;
         spdlog::info("VSync enabled");
@@ -587,7 +638,11 @@ int main(int argc, char* argv[]) {
     ray::SetTraceLogLevel(ray::LOG_ERROR);
     setup_logging(global_data.config->general.log_level);
 
+#ifdef YATAIDON_PLATFORM_PS5
+    ps5_init_window(global_data.config->video.target_fps);
+#else
     ray::InitWindow(1280, 720, "YataiDON");
+#endif
     try {
         load_skin();
     } catch (const std::exception& e) {
@@ -627,6 +682,10 @@ int main(int argc, char* argv[]) {
 #endif
 
     double target_fps = global_data.config->video.target_fps;
+#ifdef YATAIDON_PLATFORM_PS5
+    target_fps = ps5_output_refresh_hz();
+    global_data.config->video.target_fps = static_cast<int>(target_fps);
+#endif
     if (target_fps != -1) {
         spdlog::info("Target FPS set to {}", target_fps);
     }
@@ -644,7 +703,7 @@ int main(int argc, char* argv[]) {
 
     L.camera = compute_camera2d(tex.screen_width, tex.screen_height);
 
-#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_IOS)
+#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(YATAIDON_PLATFORM_PS5)
     if (global_data.config->video.borderless) {
         ray::ToggleBorderlessWindowed();
         spdlog::info("Borderless window enabled");
@@ -666,7 +725,9 @@ int main(int argc, char* argv[]) {
 #elif defined(YATAIDON_PLATFORM_IOS)
     return ios_run_main_loop(run_frame);
 #else
+#ifndef YATAIDON_PLATFORM_PS5
     input_thread = std::thread(input_polling_thread);
+#endif
     start_midi_input(global_data.config->midi);
 
     while (!ray::WindowShouldClose()) {
@@ -702,4 +763,18 @@ int main(int argc, char* argv[]) {
 #endif
     spdlog::info("Game closed");
 #endif
+    return 0;
 }
+
+#ifdef YATAIDON_PLATFORM_PS5
+int main(int argc, char* argv[]) {
+    try {
+        return ps5_game_main(argc, argv);
+    } catch (const std::exception& error) {
+        ps5_report_boot_error(error.what());
+    } catch (...) {
+        ps5_report_boot_error("unknown C++ exception");
+    }
+    return 1;
+}
+#endif

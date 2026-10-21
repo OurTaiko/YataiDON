@@ -308,7 +308,9 @@ void SongSelectScreen::start_search() {
 }
 
 std::optional<Screens> SongSelectScreen::update() {
-    Screen::update();
+    if (auto next = Screen::update()) {
+        return next;
+    }
     SongSelectState prev_state = state;
     double current_time = get_current_ms();
     update_selection_ui(current_time, join_request_ms < 0.0);

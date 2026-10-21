@@ -21,11 +21,13 @@
 #include <cstring>
 #include <exception>
 #include <vector>
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
 #include <cpptrace/cpptrace.hpp>
 #endif
 
-#ifdef _WIN32
+#ifdef YATAIDON_PLATFORM_PS5
+#include "../platform/platform_ps5.h"
+#elif defined(_WIN32)
 #include "../platform/platform_windows.h"
 #elif defined(__APPLE__) && !defined(YATAIDON_PLATFORM_IOS)
 #include "../platform/platform_macos.h"
@@ -38,7 +40,7 @@
 #endif
 
 static void log_stacktrace() {
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
     try {
         std::ostringstream oss;
         cpptrace::generate_trace().print(oss, false);

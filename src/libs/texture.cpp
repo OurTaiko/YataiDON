@@ -15,6 +15,19 @@
 #include "profiler.h"
 #include "script.h"
 #include "text.h"
+#ifdef YATAIDON_PLATFORM_PS5
+#include "asset_cache.h"
+struct CachedGPUTexture {
+    std::shared_ptr<ray::Texture2D> texture;
+    ray::Rectangle border;
+    bool has_border;
+};
+static AssetCache<CachedGPUTexture>& gpu_asset_cache() {
+    static AssetCache<CachedGPUTexture> cache(128u << 20);
+    return cache;
+}
+void clear_ps5_texture_cache() { gpu_asset_cache().clear(); }
+#endif
 
 #ifdef _WIN32
 #include "../platform/platform_windows.h"
@@ -891,11 +904,26 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
 
             // images load_screen_textures already decoded, the rest here
             std::vector<ray::Image> images(files.size());
+            std::vector<std::shared_ptr<ray::Texture2D>> gpu(files.size());
+#ifdef YATAIDON_PLATFORM_PS5
+            std::vector<char> needs_border(files.size(), 0);
+            for (const auto& p : pending) if (!p.framed) needs_border[p.first_file] = true;
+#endif
             std::vector<ray::Rectangle> borders(files.size());
             std::vector<char> has_border(files.size(), 0);
             std::vector<fs::path> rest;
             std::vector<size_t> rest_index;
             for (size_t i = 0; i < files.size(); ++i) {
+#ifdef YATAIDON_PLATFORM_PS5
+                if (auto cached = gpu_asset_cache().get(files[i].string())) {
+                    if (!needs_border[i] || cached->has_border) {
+                    gpu[i] = cached->texture;
+                    borders[i] = cached->border;
+                    has_border[i] = cached->has_border;
+                    continue;
+                    }
+                }
+#endif
                 bool got_border = false;
                 if (image_prefetch && image_prefetch->take(files[i], images[i], borders[i], got_border)) {
                     has_border[i] = got_border;
@@ -913,7 +941,6 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
             try {
                 // GPU textures indexed by file, so keys that share one atlas PNG
                 // (via "file" + "crop") upload it once and share the texture.
-                std::vector<std::shared_ptr<ray::Texture2D>> gpu(files.size());
                 for (const auto& p : pending) {
                     bool ok = true;
                     std::vector<std::shared_ptr<ray::Texture2D>> texs;
@@ -934,6 +961,15 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
                                 } else {
                                     tex = shared_texture(t);
                                     gpu[fi] = tex;
+#ifdef YATAIDON_PLATFORM_PS5
+                                    if (!p.framed && !has_border[fi]) {
+                                        borders[fi] = ray::GetImageAlphaBorder(img, 0.0f);
+                                        has_border[fi] = true;
+                                    }
+                                    auto cached = std::make_shared<CachedGPUTexture>(CachedGPUTexture{tex, borders[fi], bool(has_border[fi])});
+                                    gpu_asset_cache().put(files[fi].string(), cached,
+                                        (size_t(ray::GetPixelDataSize(t.width, t.height, t.format)) + 65535u) & ~size_t(65535u));
+#endif
                                 }
                             }
                         }
@@ -1145,11 +1181,17 @@ void TextureWrapper::load_screen_textures(const std::string& screen_name) {
                     if (const auto* frames = dirs.list(p)) {
                         for (const DirIndex::Entry& frame : *frames) {
                             if (!frame.is_dir && frame.path.extension() == ".png") {
+#ifdef YATAIDON_PLATFORM_PS5
+                                if (gpu_asset_cache().get(frame.path.string())) continue;
+#endif
                                 groups[g].push_back(frame.path);
                             }
                         }
                     }
                 } else if (p.extension() == ".png") {
+#ifdef YATAIDON_PLATFORM_PS5
+                    if (gpu_asset_cache().get(p.string())) continue;
+#endif
                     groups[g].push_back(p);
                 }
             }

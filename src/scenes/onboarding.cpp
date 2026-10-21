@@ -103,6 +103,14 @@ void OnboardingScreen::begin_download() {
         error = "Select at least one skin";
         return;
     }
+#ifdef YATAIDON_PLATFORM_PS5
+    for (int i = 0; i < kSkinCount; ++i) {
+        if (selected[i] && !installed[i]) {
+            error = "Install selected skins in /data/YataiDON/Skins first";
+            return;
+        }
+    }
+#endif
     downloading = true;
     download_started = false;
 }
@@ -198,9 +206,17 @@ std::optional<Screens> OnboardingScreen::update() {
     }
 
     const int rows = kSkinCount + 2;
-    if (ray::IsKeyPressed(ray::KEY_UP)) {
+    if (ray::IsKeyPressed(ray::KEY_UP)
+#ifdef YATAIDON_PLATFORM_PS5
+        || check_key_pressed(10000 + ray::GAMEPAD_BUTTON_LEFT_FACE_UP)
+#endif
+    ) {
         row = (row + rows - 1) % rows;
-    } else if (ray::IsKeyPressed(ray::KEY_DOWN)) {
+    } else if (ray::IsKeyPressed(ray::KEY_DOWN)
+#ifdef YATAIDON_PLATFORM_PS5
+        || check_key_pressed(10000 + ray::GAMEPAD_BUTTON_LEFT_FACE_DOWN)
+#endif
+    ) {
         row = (row + 1) % rows;
     } else if (is_l_kat_pressed() || menu_left_pressed() || is_r_kat_pressed() || menu_right_pressed()) {
         if (row == online_row()) {
@@ -266,6 +282,10 @@ void OnboardingScreen::draw() {
     if (!error.empty()) {
         draw_line(error, 565 * s, static_cast<int>(22 * s), ray::RED);
     }
+#ifdef YATAIDON_PLATFORM_PS5
+    draw_line("D-pad Up/Down: move    Cross: select", 650 * s, static_cast<int>(20 * s),
+#else
     draw_line("Up/Down: move    Enter / don: select    Left/Right: toggle online", 650 * s, static_cast<int>(20 * s),
+#endif
               ray::GRAY);
 }

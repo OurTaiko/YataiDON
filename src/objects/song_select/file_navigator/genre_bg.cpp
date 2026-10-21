@@ -1,4 +1,5 @@
 #include "genre_bg.h"
+#include "../../../libs/color_shader.h"
 
 GenreBG::GenreBG(const std::string& text_name, std::optional<ray::Color> color, TextureIndex texture_index,
                  float distance)
@@ -13,13 +14,8 @@ GenreBG::GenreBG(const std::string& text_name, std::optional<ray::Color> color, 
     name = make_unique<OutlinedText>(text_name, (int)font_size, ray::WHITE, ray::BLACK, false, name_outline);
 
     if (color.has_value()) {
-        shader = load_shader("shader/dummy.vs", "shader/colortransform.fs");
-        float src[3] = {142 / 255.0f, 212 / 255.0f, 30 / 255.0f};
-        float tgt[3] = {color.value().r / 255.0f, color.value().g / 255.0f, color.value().b / 255.0f};
-        int source_loc = ray::GetShaderLocation(shader, "sourceColor");
-        int target_loc = ray::GetShaderLocation(shader, "targetColor");
-        ray::SetShaderValue(shader, source_loc, src, ray::SHADER_UNIFORM_VEC3);
-        ray::SetShaderValue(shader, target_loc, tgt, ray::SHADER_UNIFORM_VEC3);
+        shader_owner = load_color_shader(color.value());
+        shader = *shader_owner;
         shader_loaded = ray::IsShaderValid(shader);
     }
 

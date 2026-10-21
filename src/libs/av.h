@@ -115,6 +115,22 @@ namespace av {
         int width() const { return frame_->width; }
         int height() const { return frame_->height; }
 
+#ifdef YATAIDON_PLATFORM_PS5
+        // Reuse both the worker's conversion context and its queue buffer.
+        // RGBA matches the GPU texture layout, avoiding RGB expansion on upload.
+        void rgba_into(std::vector<uint8_t>& bytes, SwsContext*& context) const {
+            context = sws_getCachedContext(context, frame_->width, frame_->height,
+                static_cast<AVPixelFormat>(frame_->format), frame_->width, frame_->height,
+                AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+            if (!context) throw std::runtime_error("Video RGBA converter creation failed");
+            bytes.resize(static_cast<size_t>(frame_->width) * frame_->height * 4);
+            uint8_t* output[4] = {bytes.data(), nullptr, nullptr, nullptr};
+            int stride[4] = {frame_->width * 4, 0, 0, 0};
+            int rows = sws_scale(context, frame_->data, frame_->linesize, 0, frame_->height, output, stride);
+            if (rows != frame_->height) throw std::runtime_error("Incomplete video RGBA conversion");
+        }
+#endif
+
         // Returns plane 0 of the (possibly reformatted) frame.
         // Must call reformat() first for RGB24 data.
         AVPlane plane(int index) const {
@@ -580,8 +596,18 @@ namespace av {
         // Factory – mirrors PyAV's av.open(path).
         static std::unique_ptr<AVContainer> open(const std::filesystem::path& path) {
             ::AVFormatContext* ctx = nullptr;
-            check(avformat_open_input(&ctx, path.string().c_str(), nullptr, nullptr), "avformat_open_input");
-            check(avformat_find_stream_info(ctx, nullptr), "avformat_find_stream_info");
+            try {
+#ifdef YATAIDON_PLATFORM_PS5
+                auto input_path = std::filesystem::absolute(path);
+#else
+                const auto& input_path = path;
+#endif
+                check(avformat_open_input(&ctx, input_path.string().c_str(), nullptr, nullptr), "avformat_open_input");
+                check(avformat_find_stream_info(ctx, nullptr), "avformat_find_stream_info");
+            } catch (...) {
+                avformat_close_input(&ctx);
+                throw;
+            }
             return std::unique_ptr<AVContainer>(new AVContainer(ctx));
         }
 

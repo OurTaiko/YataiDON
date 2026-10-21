@@ -69,6 +69,7 @@ Download the latest release for your operating system from the [releases page](h
 - [Windows (MSVC)](<https://github.com/Yonokid/YataiDON/wiki/Windows-(MSVC)>) *(page pending)*
 - [Android](https://github.com/Yonokid/YataiDON/wiki/Android)
 - [iOS](ios/README.md)
+- [PS5 homebrew (experimental)](ps5/README.md)
 
 ### Formatting
 

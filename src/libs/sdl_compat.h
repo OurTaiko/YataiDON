@@ -209,8 +209,11 @@ inline bool SDL_PutAudioStreamData(YD_AudioStream* s, const void* data, int len)
 
 // Device IDs on SDL2 are enumeration index + 1 so that 0 stays invalid.
 inline SDL_AudioDeviceID* SDL_GetAudioPlaybackDevices(int* count) {
+    if (count) *count = 0;
     const int n = SDL_GetNumAudioDevices(0);
+    if (n <= 0) return nullptr;
     auto* ids = static_cast<SDL_AudioDeviceID*>(SDL_malloc((n + 1) * sizeof(SDL_AudioDeviceID)));
+    if (!ids) return nullptr;
     for (int i = 0; i < n; i++) {
         ids[i] = static_cast<SDL_AudioDeviceID>(i + 1);
     }

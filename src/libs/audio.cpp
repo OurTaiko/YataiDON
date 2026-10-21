@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "atomic_ref_compat.h"
 
 #include "profiler.h"
 #include "spdlog/spdlog.h"
@@ -39,7 +40,7 @@ static bool decode_bank(const fs::path& p, gen4::DecodedAudio& out) {
 }
 #endif
 #include <algorithm>
-#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS)
+#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -50,8 +51,17 @@ extern "C" {
 // Decode any audio file to float32 interleaved via FFmpeg.
 // Returns false on failure; on success fills frames/sample_rate/channels/data (caller frees).
 static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* out_frames, unsigned int* out_rate,
-                                unsigned int* out_channels) {
+                                unsigned int* out_channels, unsigned int requested_rate = 0,
+                                const std::atomic<bool>* cancelled = nullptr) {
     AVFormatContext* fmt = nullptr;
+    if (cancelled) {
+        fmt = avformat_alloc_context();
+        if (!fmt) return false;
+        fmt->interrupt_callback.callback = [](void* flag) -> int {
+            return static_cast<const std::atomic<bool>*>(flag)->load(std::memory_order_relaxed) ? 1 : 0;
+        };
+        fmt->interrupt_callback.opaque = const_cast<std::atomic<bool>*>(cancelled);
+    }
     if (avformat_open_input(&fmt, path, nullptr, nullptr) < 0) {
         return false;
     }
@@ -91,8 +101,12 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
 
     SwrContext* swr = nullptr;
     AVChannelLayout out_layout = AV_CHANNEL_LAYOUT_STEREO;
-    int out_ch = 2;
-    if (swr_alloc_set_opts2(&swr, &out_layout, AV_SAMPLE_FMT_FLT, dec->sample_rate, &dec->ch_layout, dec->sample_fmt,
+#ifdef YATAIDON_PLATFORM_PS5
+    if (dec->ch_layout.nb_channels == 1) out_layout = AV_CHANNEL_LAYOUT_MONO;
+#endif
+    int out_ch = out_layout.nb_channels;
+    const int output_rate = requested_rate ? int(requested_rate) : dec->sample_rate;
+    if (swr_alloc_set_opts2(&swr, &out_layout, AV_SAMPLE_FMT_FLT, output_rate, &dec->ch_layout, dec->sample_fmt,
                             dec->sample_rate, 0, nullptr) < 0 ||
         !swr) {
         swr_free(&swr);
@@ -108,6 +122,11 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
     }
 
     std::vector<float> pcm;
+    if (fmt->duration > 0) {
+        const double estimate = double(fmt->duration) / AV_TIME_BASE * output_rate * out_ch;
+        if (estimate > 0 && estimate < (32u << 20) / sizeof(float)) pcm.reserve(size_t(estimate));
+    }
+    std::vector<float> conversion;
     AVPacket* pkt = av_packet_alloc();
     AVFrame* frm = av_frame_alloc();
     if (!pkt || !frm) {
@@ -129,11 +148,12 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
                 break;
             }
             int64_t n = swr_get_out_samples(swr, frm->nb_samples);
-            std::vector<float> tmp(n * out_ch);
-            uint8_t* op = (uint8_t*)tmp.data();
+            if (n <= 0) { av_frame_unref(frm); continue; }
+            if (conversion.size() < size_t(n) * out_ch) conversion.resize(size_t(n) * out_ch);
+            uint8_t* op = (uint8_t*)conversion.data();
             int got = swr_convert(swr, &op, (int)n, (const uint8_t**)frm->extended_data, frm->nb_samples);
             if (got > 0) {
-                pcm.insert(pcm.end(), tmp.begin(), tmp.begin() + got * out_ch);
+                pcm.insert(pcm.end(), conversion.begin(), conversion.begin() + got * out_ch);
             } else if (got < 0) {
                 spdlog::error("ffmpeg_decode_float: swr_convert failed for {}", path);
             }
@@ -141,7 +161,7 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
         }
     };
 
-    while (av_read_frame(fmt, pkt) >= 0) {
+    while ((!cancelled || !cancelled->load(std::memory_order_relaxed)) && av_read_frame(fmt, pkt) >= 0) {
         if (pkt->stream_index == audio_idx) {
             if (avcodec_send_packet(dec, pkt) < 0) {
                 spdlog::error("ffmpeg_decode_float: avcodec_send_packet failed for {}", path);
@@ -154,17 +174,26 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
     avcodec_send_packet(dec, nullptr);
     drain();
 
+    // A rate conversion retains a short filter tail after the decoder drains.
+    conversion.resize(4096 * out_ch);
+    for (;;) {
+        uint8_t* output = reinterpret_cast<uint8_t*>(conversion.data());
+        int got = swr_convert(swr, &output, 4096, nullptr, 0);
+        if (got <= 0) break;
+        pcm.insert(pcm.end(), conversion.begin(), conversion.begin() + got * out_ch);
+    }
+
     av_packet_free(&pkt);
     av_frame_free(&frm);
     swr_free(&swr);
 
-    if (pcm.empty()) {
+    if (pcm.empty() || (cancelled && cancelled->load(std::memory_order_relaxed))) {
         avcodec_free_context(&dec);
         avformat_close_input(&fmt);
         return false;
     }
 
-    *out_rate = (unsigned int)dec->sample_rate;
+    *out_rate = (unsigned int)output_rate;
     *out_channels = (unsigned int)out_ch;
     *out_frames = (sf_count_t)(pcm.size() / out_ch);
     *out_data = new float[pcm.size()];
@@ -267,9 +296,13 @@ static void unload_music_stream_from_map(std::unordered_map<std::string, music>&
 AudioEngine::AudioEngine() = default;
 
 std::vector<std::string> enumerate_audio_devices(int device_type) {
+#ifdef YATAIDON_PLATFORM_PS5
+    (void)device_type;
+    return {"PS5 AudioOut"};
+#else
     std::vector<std::string> names;
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
     RtAudio::Api api = RtAudio::UNSPECIFIED;
     switch (device_type) {
     case 1:
@@ -354,6 +387,7 @@ std::vector<std::string> enumerate_audio_devices(int device_type) {
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
     return names;
+#endif
 }
 
 AudioEngine::~AudioEngine() {
@@ -373,20 +407,20 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
     std::shared_lock<std::shared_mutex> guard(engine->rw_lock);
 
     for (auto& [name, snd] : engine->sounds) {
-        std::atomic_ref<bool> aref_playing(snd.is_playing);
-        std::atomic_ref<unsigned int> aref_frame(snd.current_frame);
+        yd::atomic_ref<bool> aref_playing(snd.is_playing);
+        yd::atomic_ref<unsigned int> aref_frame(snd.current_frame);
 
         if (!aref_playing.load(std::memory_order_acquire)) {
             continue;
         }
 
-        const float volume = std::atomic_ref<float>(snd.volume).load(std::memory_order_relaxed) *
-                             std::atomic_ref<float>(snd.playback_gain).load(std::memory_order_relaxed);
+        const float volume = yd::atomic_ref<float>(snd.volume).load(std::memory_order_relaxed) *
+                             yd::atomic_ref<float>(snd.playback_gain).load(std::memory_order_relaxed);
 
-        const float pan = std::atomic_ref<float>(snd.pan).load(std::memory_order_relaxed);
+        const float pan = yd::atomic_ref<float>(snd.pan).load(std::memory_order_relaxed);
         unsigned int frame = aref_frame.load(std::memory_order_relaxed);
 
-        const float pitch = std::atomic_ref<float>(snd.pitch).load(std::memory_order_relaxed);
+        const float pitch = yd::atomic_ref<float>(snd.pitch).load(std::memory_order_relaxed);
         const float* data_ptr = snd.data;
         const unsigned int channels = snd.channels;
 
@@ -397,12 +431,12 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
         // fraction must survive across mix() calls, otherwise non-integer
         // pitches degrade toward trunc(pitch) as the buffer size shrinks
         // (at buffer_size=1, pitch 0.9 never advances and 1.5 plays at 1.0).
-        double frame_f = (double)frame + std::atomic_ref<float>(snd.frame_frac).load(std::memory_order_relaxed);
+        double frame_f = (double)frame + yd::atomic_ref<float>(snd.frame_frac).load(std::memory_order_relaxed);
 
         while (frames_to_process > 0 && still_playing) {
             unsigned long src_frame = (unsigned long)frame_f;
             if (src_frame >= snd.frame_count) {
-                if (std::atomic_ref<bool>(snd.loop).load(std::memory_order_relaxed) && snd.frame_count > 0) {
+                if (yd::atomic_ref<bool>(snd.loop).load(std::memory_order_relaxed) && snd.frame_count > 0) {
                     frame_f = 0.0;
                     continue;
                 }
@@ -438,7 +472,7 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
         }
         frame = (unsigned int)frame_f;
 
-        std::atomic_ref<float>(snd.frame_frac).store((float)(frame_f - (double)frame), std::memory_order_relaxed);
+        yd::atomic_ref<float>(snd.frame_frac).store((float)(frame_f - (double)frame), std::memory_order_relaxed);
         aref_frame.store(frame, std::memory_order_relaxed);
         if (!still_playing) {
             aref_playing.store(false, std::memory_order_release);
@@ -446,15 +480,15 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
     }
 
     for (auto& [name, mus] : engine->music_streams) {
-        std::atomic_ref<bool> aref_playing(mus.is_playing);
+        yd::atomic_ref<bool> aref_playing(mus.is_playing);
 
         if (!aref_playing.load(std::memory_order_acquire)) {
             continue;
         }
 
-        std::atomic_ref<unsigned long long> aref_frame(mus.current_frame);
-        const float volume = std::atomic_ref<float>(mus.volume).load(std::memory_order_relaxed);
-        const float pan = std::atomic_ref<float>(mus.pan).load(std::memory_order_relaxed);
+        yd::atomic_ref<unsigned long long> aref_frame(mus.current_frame);
+        const float volume = yd::atomic_ref<float>(mus.volume).load(std::memory_order_relaxed);
+        const float pan = yd::atomic_ref<float>(mus.pan).load(std::memory_order_relaxed);
 
         unsigned long frames_to_process = framesPerBuffer;
         unsigned long output_index = 0;
@@ -627,7 +661,7 @@ void AudioEngine::sdl_audio_callback(void* userdata, SDL_AudioStream* stream, in
     SDL_PutAudioStreamData(stream, engine->sdl_scratch_buffer.data(), static_cast<int>(needed_floats * sizeof(float)));
 }
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
 int AudioEngine::rt_audio_callback(void* outputBuffer, void* /*inputBuffer*/, unsigned int framesPerBuffer,
                                    double /*streamTime*/, unsigned int /*status*/, void* userData) {
     AudioEngine* engine = static_cast<AudioEngine*>(userData);
@@ -668,7 +702,7 @@ int AudioEngine::pa_stream_callback(const void* /*inputBuffer*/, void* outputBuf
 }
 #endif
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
 bool AudioEngine::init_rtaudio_device(RtAudio::Api api, const char* label) {
     rt_audio = new RtAudio(api, [](RtAudioErrorType type, const std::string& errorText) {
         if (type == RTAUDIO_WARNING) {
@@ -762,6 +796,16 @@ bool AudioEngine::init_rtaudio_device(RtAudio::Api api, const char* label) {
 #endif
 
 bool AudioEngine::init_sdl3_device() {
+#ifdef YATAIDON_PLATFORM_PS5
+    target_sample_rate = 48000;
+    buffer_size = std::clamp<unsigned long>(((buffer_size + 255) / 256) * 256, 256, 2048);
+    ps5_audio = ps5_open_audio([](float* output, unsigned int frames, void* context) {
+        mix(output, frames, static_cast<AudioEngine*>(context));
+    }, this, static_cast<unsigned int>(buffer_size));
+    is_ready = ps5_audio != nullptr;
+    if (is_ready) spdlog::info("PS5 AudioOut: 48000 Hz, stereo, {} frames", buffer_size);
+    return is_ready;
+#else
 #ifdef YATAIDON_PLATFORM_IOS
     ios_request_audio_buffer();
 #endif
@@ -841,6 +885,7 @@ bool AudioEngine::init_sdl3_device() {
     spdlog::info("    > Sample rate:   {} Hz (requested {} Hz)", actual_spec.freq, (int)target_sample_rate);
     spdlog::info("    > Buffer size:   {} frames (device-reported)", actual_frames);
     return true;
+#endif
 }
 
 bool AudioEngine::init_audio_device(const fs::path& sounds_path, const AudioConfig& audio_config,
@@ -858,7 +903,7 @@ bool AudioEngine::init_audio_device(const fs::path& sounds_path, const AudioConf
     this->is_ready = false;
     this->master_volume = 1.0f;
     try {
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
         switch (audio_config.device_type) {
         case 1:
             return init_rtaudio_device(RtAudio::LINUX_ALSA, "ALSA");
@@ -902,6 +947,10 @@ void AudioEngine::close_audio_device() {
         return;
     }
     try {
+#ifdef YATAIDON_PLATFORM_PS5
+        ps5_close_audio(ps5_audio);
+        ps5_audio = nullptr;
+#endif
         unload_all_sounds();
         unload_all_music();
 
@@ -913,7 +962,7 @@ void AudioEngine::close_audio_device() {
             SDL_QuitSubSystem(SDL_INIT_AUDIO);
             sdl_audio_subsystem_initialized = false;
         }
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
         if (rt_audio != nullptr) {
             if (rt_audio->isStreamRunning()) {
                 rt_audio->stopStream();
@@ -990,11 +1039,31 @@ static float* adopt_decoded_pcm(std::vector<float>& samples, int channels, unsig
     return resampled;
 }
 
+#ifdef YATAIDON_PLATFORM_PS5
+#include "asset_cache.h"
+static AssetCache<sound>& decoded_sound_cache() {
+    static AssetCache<sound> cache(96u << 20);
+    return cache;
+}
+using SoundManifest = std::vector<std::pair<fs::path, std::string>>;
+static AssetCache<SoundManifest>& sound_manifest_cache() {
+    static AssetCache<SoundManifest> cache(4u << 20);
+    return cache;
+}
+void clear_ps5_audio_cache() {
+    decoded_sound_cache().clear();
+    sound_manifest_cache().clear();
+}
+#endif
+
 void AudioEngine::store_sound(const std::string& name, const sound& snd) {
     std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        std::atomic_ref<bool>(it->second.is_playing).store(false, std::memory_order_relaxed);
+        yd::atomic_ref<bool>(it->second.is_playing).store(false, std::memory_order_relaxed);
+#ifdef YATAIDON_PLATFORM_PS5
+        if (!it->second.cached_data)
+#endif
         delete[] it->second.data;
         if (it->second.resampler) {
             src_delete(it->second.resampler);
@@ -1002,10 +1071,28 @@ void AudioEngine::store_sound(const std::string& name, const sound& snd) {
         delete[] it->second.resample_buffer;
     }
     sounds[name] = snd;
+#ifdef YATAIDON_PLATFORM_PS5
+    if (name == "bgm" || name.ends_with("_bgm")) sounds[name].loop = true;
+#endif
 }
 
 std::string AudioEngine::load_sound(const fs::path& file_path, const std::string& name) {
     try {
+#ifdef YATAIDON_PLATFORM_PS5
+        const std::string cache_key = file_path.lexically_normal().string() + ":" + std::to_string(target_sample_rate);
+        if (auto cached = decoded_sound_cache().get(cache_key)) {
+            store_sound(name, *cached);
+            return name;
+        }
+#endif
+        auto install_sound = [&](sound snd) {
+#ifdef YATAIDON_PLATFORM_PS5
+            snd.cached_data = std::shared_ptr<float[]>(snd.data);
+            const size_t bytes = size_t(snd.frame_count) * snd.channels * sizeof(float);
+            decoded_sound_cache().put(cache_key, std::make_shared<sound>(snd), bytes);
+#endif
+            store_sound(name, snd);
+        };
 #ifdef SUPPORT_FUMEN
         if (is_bank_file(file_path)) {
             gen4::DecodedAudio decoded;
@@ -1025,7 +1112,7 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
             snd.frame_count = frames;
             snd.sample_rate = rate;
             snd.channels = decoded.channels;
-            store_sound(name, snd);
+            install_sound(snd);
             spdlog::info("Loaded sound (G.719): {} ({} frames, {} Hz, {} ch)", name, frames, rate, snd.channels);
             return name;
         }
@@ -1041,16 +1128,24 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
 
         if (!file) {
             std::string path_str = path_to_string(file_path);
+#ifdef YATAIDON_PLATFORM_PS5
+            const auto ext = file_path.extension().string();
+            if (ext == ".wav" || ext == ".aif" || ext == ".aiff")
+#endif
             file = sf_open(path_str.c_str(), SFM_READ, &file_info);
         }
 
         if (!file) {
-#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS)
+#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
             float* ff_data = nullptr;
             sf_count_t ff_frames = 0;
             unsigned int ff_rate = 0, ff_ch = 0;
             std::string path_str2 = path_to_string(file_path);
-            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch)) {
+            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch
+#ifdef YATAIDON_PLATFORM_PS5
+                                     , (unsigned int)target_sample_rate
+#endif
+                                     )) {
                 spdlog::error("Failed to open sound file: {} - {} (ffmpeg fallback also failed)", file_path.string(),
                               sf_strerror(NULL));
                 return "";
@@ -1082,7 +1177,7 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
                 snd.frame_count = sd.output_frames_gen;
                 snd.sample_rate = (unsigned int)target_sample_rate;
             }
-            store_sound(name, snd);
+            install_sound(snd);
             spdlog::debug("Loaded sound (ffmpeg): {} ({} frames, {} Hz, {} ch)", name, snd.frame_count, snd.sample_rate,
                           snd.channels);
             return name;
@@ -1141,7 +1236,7 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
             snd.sample_rate = target_sample_rate;
         }
 
-        store_sound(name, snd);
+        install_sound(snd);
 
         spdlog::debug("Loaded sound: {} ({} frames, {} Hz, {} channels)", name, snd.frame_count, snd.sample_rate,
                       snd.channels);
@@ -1158,11 +1253,18 @@ void AudioEngine::load_screen_sounds(const std::string& screen_name) {
     std::vector<std::pair<fs::path, std::string>> queue;
     std::unordered_set<std::string> claimed;
 
-    auto want = [&](const fs::path& file, const std::string& name) {
+#ifdef YATAIDON_PLATFORM_PS5
+    std::string manifest_key = sounds_path.lexically_normal().string() + "/" + screen_name;
+    for (const auto& root : skin_ancestor_roots()) manifest_key += ":" + root.string();
+    if (auto cached = sound_manifest_cache().get(manifest_key)) {
+        queue = *cached;
+    } else {
+#endif
+    auto want = [&](const fs::path& file, const std::string& name, bool known_file = false) {
         if (!claimed.insert(name).second) {
             return;
         }
-        if (!fs::exists(file)) {
+        if (!known_file && !fs::exists(file)) {
             claimed.erase(name);
             return;
         }
@@ -1177,10 +1279,10 @@ void AudioEngine::load_screen_sounds(const std::string& screen_name) {
             for (const auto& entry : fs::directory_iterator(dir)) {
                 if (entry.is_directory()) {
                     for (const auto& file : fs::directory_iterator(entry.path())) {
-                        want(file.path(), entry.path().stem().string() + "_" + file.path().stem().string());
+                        if (file.is_regular_file()) want(file.path(), entry.path().stem().string() + "_" + file.path().stem().string(), true);
                     }
                 } else if (entry.is_regular_file()) {
-                    want(entry.path(), entry.path().stem().string());
+                    want(entry.path(), entry.path().stem().string(), true);
                 }
             }
         } catch (const fs::filesystem_error& e) {
@@ -1227,6 +1329,12 @@ void AudioEngine::load_screen_sounds(const std::string& screen_name) {
         scan(dir / "global");
     }
 
+#ifdef YATAIDON_PLATFORM_PS5
+        size_t bytes = sizeof(SoundManifest);
+        for (const auto& [file, name] : queue) bytes += sizeof(SoundManifest::value_type) + file.string().size() + name.size();
+        sound_manifest_cache().put(manifest_key, std::make_shared<SoundManifest>(queue), bytes);
+    }
+#endif
     unsigned hw = std::thread::hardware_concurrency();
     size_t workers = std::min<size_t>(queue.size(), hw ? hw : 4);
     if (workers <= 1) {
@@ -1256,9 +1364,12 @@ void AudioEngine::unload_sound(const std::string& name) {
     if (it != sounds.end()) {
         sound& snd = it->second;
 
-        std::atomic_ref<bool>(snd.is_playing).store(false, std::memory_order_relaxed);
+        yd::atomic_ref<bool>(snd.is_playing).store(false, std::memory_order_relaxed);
 
         if (snd.data) {
+#ifdef YATAIDON_PLATFORM_PS5
+            if (!snd.cached_data)
+#endif
             delete[] snd.data;
             snd.data = nullptr;
         }
@@ -1303,11 +1414,12 @@ uint64_t AudioEngine::sound_play_count(const std::string& name) {
 }
 
 void AudioEngine::play_sound(const std::string& name, VolumePreset volume_preset, float gain) {
+    bool first_request;
     {
         std::scoped_lock g(play_count_lock);
-        ++play_counts[name];
+        first_request = ++play_counts[name] == 1;
     }
-    std::shared_lock<std::shared_mutex> guard(rw_lock);
+    std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
         sound& snd = it->second;
@@ -1325,13 +1437,15 @@ void AudioEngine::play_sound(const std::string& name, VolumePreset volume_preset
             } else if (volume_preset == VolumePreset::ATTRACT_MODE) {
                 volume = volume_presets.attract_mode;
             }
-            std::atomic_ref<float>(snd.volume).store(volume, std::memory_order_relaxed);
+            yd::atomic_ref<float>(snd.volume).store(volume, std::memory_order_relaxed);
         }
 
-        std::atomic_ref<float>(snd.playback_gain).store(std::max(gain, 0.0f), std::memory_order_relaxed);
-        std::atomic_ref<unsigned int>(snd.current_frame).store(0, std::memory_order_relaxed);
-        std::atomic_ref<float>(snd.frame_frac).store(0.0f, std::memory_order_relaxed);
-        std::atomic_ref<bool>(snd.is_playing).store(true, std::memory_order_release);
+        yd::atomic_ref<float>(snd.playback_gain).store(std::max(gain, 0.0f), std::memory_order_relaxed);
+        yd::atomic_ref<unsigned int>(snd.current_frame).store(0, std::memory_order_relaxed);
+        yd::atomic_ref<float>(snd.frame_frac).store(0.0f, std::memory_order_relaxed);
+        yd::atomic_ref<bool>(snd.is_playing).store(true, std::memory_order_release);
+    } else if (first_request) {
+        spdlog::warn("Requested sound is not loaded: {}", name);
     }
 }
 
@@ -1341,12 +1455,12 @@ bool AudioEngine::has_sound(const std::string& name) {
 }
 
 void AudioEngine::stop_sound(const std::string& name) {
-    std::shared_lock<std::shared_mutex> guard(rw_lock);
+    std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        std::atomic_ref<bool>(it->second.is_playing).store(false, std::memory_order_relaxed);
-        std::atomic_ref<unsigned int>(it->second.current_frame).store(0, std::memory_order_relaxed);
-        std::atomic_ref<float>(it->second.frame_frac).store(0.0f, std::memory_order_relaxed);
+        yd::atomic_ref<bool>(it->second.is_playing).store(false, std::memory_order_relaxed);
+        yd::atomic_ref<unsigned int>(it->second.current_frame).store(0, std::memory_order_relaxed);
+        yd::atomic_ref<float>(it->second.frame_frac).store(0.0f, std::memory_order_relaxed);
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1356,7 +1470,7 @@ void AudioEngine::set_sound_loop(const std::string& name, bool loop) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        std::atomic_ref<bool>(it->second.loop).store(loop, std::memory_order_relaxed);
+        yd::atomic_ref<bool>(it->second.loop).store(loop, std::memory_order_relaxed);
     }
 }
 
@@ -1364,7 +1478,7 @@ bool AudioEngine::is_sound_playing(const std::string& name) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        return std::atomic_ref<bool>(it->second.is_playing).load(std::memory_order_relaxed);
+        return yd::atomic_ref<bool>(it->second.is_playing).load(std::memory_order_relaxed);
     }
     spdlog::warn("Sound {} not found", name);
     return false;
@@ -1374,7 +1488,7 @@ void AudioEngine::set_sound_volume(const std::string& name, float volume) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        std::atomic_ref<float>(it->second.volume).store(std::clamp(volume, 0.0f, 1.0f), std::memory_order_relaxed);
+        yd::atomic_ref<float>(it->second.volume).store(std::clamp(volume, 0.0f, 1.0f), std::memory_order_relaxed);
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1384,7 +1498,7 @@ void AudioEngine::set_sound_pan(const std::string& name, float pan) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        std::atomic_ref<float>(it->second.pan).store(std::clamp(pan, 0.0f, 1.0f), std::memory_order_relaxed);
+        yd::atomic_ref<float>(it->second.pan).store(std::clamp(pan, 0.0f, 1.0f), std::memory_order_relaxed);
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1397,7 +1511,7 @@ void AudioEngine::set_sound_pitch(const std::string& name, float pitch) {
         if (!std::isfinite(pitch)) {
             pitch = 1.0f;
         }
-        std::atomic_ref<float>(it->second.pitch).store(std::clamp(pitch, 0.01f, 16.0f), std::memory_order_relaxed);
+        yd::atomic_ref<float>(it->second.pitch).store(std::clamp(pitch, 0.01f, 16.0f), std::memory_order_relaxed);
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1407,7 +1521,7 @@ float AudioEngine::get_sound_time_played(const std::string& name) const {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        unsigned int frame = std::atomic_ref<unsigned int>(const_cast<unsigned int&>(it->second.current_frame))
+        unsigned int frame = yd::atomic_ref<unsigned int>(const_cast<unsigned int&>(it->second.current_frame))
                                  .load(std::memory_order_relaxed);
         return static_cast<float>(frame) / static_cast<float>(target_sample_rate);
     }
@@ -1426,15 +1540,15 @@ float AudioEngine::get_sound_time_length(const std::string& name) const {
 }
 
 void AudioEngine::seek_sound(const std::string& name, float position) {
-    std::shared_lock<std::shared_mutex> guard(rw_lock);
+    std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
         sound& snd = it->second;
         unsigned int frame =
             static_cast<unsigned int>(std::max(position, 0.0f) * static_cast<float>(target_sample_rate));
-        std::atomic_ref<unsigned int>(snd.current_frame)
+        yd::atomic_ref<unsigned int>(snd.current_frame)
             .store(std::min(frame, snd.frame_count), std::memory_order_relaxed);
-        std::atomic_ref<float>(snd.frame_frac).store(0.0f, std::memory_order_relaxed);
+        yd::atomic_ref<float>(snd.frame_frac).store(0.0f, std::memory_order_relaxed);
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1470,6 +1584,23 @@ bool AudioEngine::prepare_nus3bank_pcm(const fs::path& file_path, PreparedPCM& o
 #endif
 }
 
+#ifdef YATAIDON_PLATFORM_PS5
+bool AudioEngine::prepare_music_pcm(const fs::path& file_path, PreparedPCM& out, const std::atomic<bool>& cancelled) {
+    if (cancelled.load(std::memory_order_relaxed)) return false;
+    float* data = nullptr;
+    sf_count_t frames = 0;
+    unsigned rate = 0, channels = 0;
+    if (!ffmpeg_decode_float(path_to_string(file_path).c_str(), &data, &frames, &rate, &channels, 48000, &cancelled))
+        return false;
+    out.data.reset(data);
+    out.frames = static_cast<unsigned>(frames);
+    out.rate = rate;
+    out.channels = static_cast<int>(channels);
+    out.source_path = file_path.string();
+    return !cancelled.load(std::memory_order_relaxed);
+}
+#endif
+
 std::string AudioEngine::load_music_stream_prepared(PreparedPCM&& pcm, const std::string& name) {
     if (!pcm.data || pcm.frames == 0 || pcm.channels <= 0) {
         return "";
@@ -1488,7 +1619,7 @@ std::string AudioEngine::load_music_stream_prepared(PreparedPCM&& pcm, const std
         std::unique_lock<std::shared_mutex> guard(rw_lock);
         music_streams[name] = mus;
     }
-    spdlog::info("Loaded music stream (G.719): {} ({} frames, {} Hz, {} ch)", name, pcm.frames, pcm.rate, pcm.channels);
+    spdlog::info("Loaded prepared music stream: {} ({} frames, {} Hz, {} ch)", name, pcm.frames, pcm.rate, pcm.channels);
     return name;
 }
 
@@ -1518,12 +1649,16 @@ std::string AudioEngine::load_music_stream(const fs::path& file_path, const std:
         }
 
         if (!file) {
-#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS)
+#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
             float* ff_data = nullptr;
             sf_count_t ff_frames = 0;
             unsigned int ff_rate = 0, ff_ch = 0;
             std::string path_str2 = path_to_string(file_path);
-            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch)) {
+            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch
+#ifdef YATAIDON_PLATFORM_PS5
+                                     , static_cast<unsigned>(target_sample_rate)
+#endif
+                                     )) {
                 spdlog::error("Failed to open music file: {} - {} (ffmpeg fallback also failed)", file_path.string(),
                               sf_strerror(NULL));
                 return "";
@@ -1690,7 +1825,7 @@ std::string AudioEngine::load_music_stream_memory(const av::AVAudioStream& audio
 #endif // __EMSCRIPTEN__
 
 void AudioEngine::play_music_stream(const std::string& name, VolumePreset volume_preset) {
-    std::shared_lock<std::shared_mutex> guard(rw_lock);
+    std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = music_streams.find(name);
     if (it != music_streams.end()) {
         music& mus = it->second;
@@ -1708,11 +1843,11 @@ void AudioEngine::play_music_stream(const std::string& name, VolumePreset volume
             } else if (volume_preset == VolumePreset::ATTRACT_MODE) {
                 volume = volume_presets.attract_mode;
             }
-            std::atomic_ref<float>(mus.volume).store(volume, std::memory_order_relaxed);
+            yd::atomic_ref<float>(mus.volume).store(volume, std::memory_order_relaxed);
         }
 
-        std::atomic_ref<unsigned long long>(mus.current_frame).store(0, std::memory_order_relaxed);
-        std::atomic_ref<bool>(mus.is_playing).store(true, std::memory_order_release);
+        yd::atomic_ref<unsigned long long>(mus.current_frame).store(0, std::memory_order_relaxed);
+        yd::atomic_ref<bool>(mus.is_playing).store(true, std::memory_order_release);
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1739,7 +1874,7 @@ float AudioEngine::get_music_time_played(const std::string& name) const {
     auto it = music_streams.find(name);
     if (it != music_streams.end()) {
         unsigned long long frame =
-            std::atomic_ref<unsigned long long>(const_cast<unsigned long long&>(it->second.current_frame))
+            yd::atomic_ref<unsigned long long>(const_cast<unsigned long long&>(it->second.current_frame))
                 .load(std::memory_order_relaxed);
         return static_cast<float>(frame) / static_cast<float>(target_sample_rate);
     }
@@ -1751,7 +1886,7 @@ void AudioEngine::set_music_volume(const std::string& name, float volume) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = music_streams.find(name);
     if (it != music_streams.end()) {
-        std::atomic_ref<float>(it->second.volume).store(std::clamp(volume, 0.0f, 1.0f), std::memory_order_relaxed);
+        yd::atomic_ref<float>(it->second.volume).store(std::clamp(volume, 0.0f, 1.0f), std::memory_order_relaxed);
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1766,7 +1901,7 @@ bool AudioEngine::is_music_stream_playing(const std::string& name) const {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = music_streams.find(name);
     if (it != music_streams.end()) {
-        return std::atomic_ref<bool>(const_cast<bool&>(it->second.is_playing)).load(std::memory_order_relaxed);
+        return yd::atomic_ref<bool>(const_cast<bool&>(it->second.is_playing)).load(std::memory_order_relaxed);
     }
     spdlog::warn("Sound {} not found", name);
     return false;
@@ -1842,7 +1977,7 @@ void AudioEngine::seek_music_stream(const std::string& name, float position) {
             unsigned long long frame_pos =
                 static_cast<unsigned long long>(std::max(position, 0.0f) * static_cast<float>(target_sample_rate));
             frame_pos = std::min(frame_pos, static_cast<unsigned long long>(mus.pcm_total_frames));
-            std::atomic_ref<unsigned long long>(mus.current_frame).store(frame_pos, std::memory_order_relaxed);
+            yd::atomic_ref<unsigned long long>(mus.current_frame).store(frame_pos, std::memory_order_relaxed);
             mus.buffer_position = 0;
             mus.frames_in_buffer = 0;
         }
