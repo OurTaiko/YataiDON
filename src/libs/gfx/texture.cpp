@@ -803,6 +803,20 @@ private:
     bool stop = false;
 };
 
+// Legacy collab scripts pass PlayerNum::TWO_PLAYER (3) as the band variant.
+// Many skins only ship seat 1/2 art. Preserve the requested lookup keys, but
+// use the top band when neither the skin nor its ancestors provides variant 3.
+template<typename HasSubset>
+static fs::path collab_background_subset(const std::string& screen, const fs::path& subset, HasSubset has_subset) {
+    const std::string leaf = subset.filename().string();
+    if (!screen.starts_with("background/collab/") || subset.parent_path() != "donbg" ||
+        !leaf.ends_with("_3") || has_subset(subset)) {
+        return subset;
+    }
+    const fs::path top = subset.parent_path() / (leaf.substr(0, leaf.size() - 1) + "1");
+    return has_subset(top) ? top : subset;
+}
+
 void TextureWrapper::load_folder(const std::string& screen_name, const std::string& subset) {
     lua_texture_lookup.clear();
     // Subset leaf name is the key prefix used in textures[] (e.g. "notes_nijiiro" from "game/notes_nijiiro")
@@ -817,6 +831,16 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
     std::unordered_set<std::string> ids_this_call;
     DirIndex local_dirs;
     DirIndex& dirs = dir_index ? *dir_index : local_dirs;
+    const fs::path source_subset = collab_background_subset(screen_name, subset, [&](const fs::path& candidate) {
+        if (dirs.is_file(graphics_path / screen_name / candidate, "texture.json")) return true;
+        return std::ranges::any_of(ancestor_graphics_paths, [&](const fs::path& root) {
+            return dirs.is_file(root / screen_name / candidate, "texture.json");
+        });
+    });
+    if (source_subset != fs::path(subset)) {
+        spdlog::info("Using collab top background {}/{} for missing {}", screen_name, source_subset.string(), subset);
+    }
+
 
     // A texture.json entry whose PNG(s) still have to be read off disk.
     struct PendingTex {
@@ -1032,7 +1056,7 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
 
     // Farthest ancestor first, child last (later loads overwrite), each ancestor skipping
     // the names already provided by the child or a closer ancestor.
-    const fs::path own_dir = graphics_path / screen_name / subset;
+    const fs::path own_dir = graphics_path / screen_name / source_subset;
     const bool child_has_folder = ancestor_graphics_paths.empty() || dirs.is_file(own_dir, "texture.json");
     std::vector<std::unordered_set<std::string>> skips(ancestor_graphics_paths.size());
     std::unordered_set<std::string> claimed;
@@ -1040,7 +1064,7 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
         claimed = overridden_names(dirs, own_dir);
     }
     for (size_t i = 0; i < ancestor_graphics_paths.size(); i++) {
-        const fs::path dir = ancestor_graphics_paths[i] / screen_name / subset;
+        const fs::path dir = ancestor_graphics_paths[i] / screen_name / source_subset;
         skips[i] = claimed;
         if (dirs.is_file(dir, "texture.json")) {
             for (const std::string& n : overridden_names(dirs, dir)) {
@@ -1049,7 +1073,7 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
         }
     }
     for (size_t i = ancestor_graphics_paths.size(); i-- > 0;) {
-        const fs::path dir = ancestor_graphics_paths[i] / screen_name / subset;
+        const fs::path dir = ancestor_graphics_paths[i] / screen_name / source_subset;
         if (dirs.is_file(dir, "texture.json")) {
             load_from_path(dir, ancestor_scales[i], &skips[i]);
         }
