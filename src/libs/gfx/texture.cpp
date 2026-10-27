@@ -18,9 +18,7 @@
 #include "../profiler.h"
 #include "text.h"
 
-#ifdef _WIN32
 #include "../../platform/platform_windows.h"
-#endif
 
 namespace {
 

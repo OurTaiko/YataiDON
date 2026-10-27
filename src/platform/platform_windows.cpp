@@ -1,5 +1,7 @@
 #include "platform_windows.h"
 
+#include "platform.h"
+
 #include <atomic>
 #include <csignal>
 #include <cstdint>
@@ -11,6 +13,7 @@
 #include <windows.h>
 #include <dbghelp.h> // must follow windows.h
 
+#include "../libs/gfx.h"
 #include "../libs/gfx/sdl_compat.h"
 // clang-format on
 
@@ -175,7 +178,7 @@ std::filesystem::path win32_path_from_encoded(const std::string& path_str, const
     return base_path / wide;
 }
 
-std::filesystem::path win32_get_executable_dir() {
+std::filesystem::path platform_get_working_directory() {
     wchar_t buffer[MAX_PATH];
     DWORD n = GetModuleFileNameW(NULL, buffer, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) {
@@ -213,9 +216,13 @@ void win32_lower_thread_priority() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
 }
 
-void win32_install_crash_handlers() {
+void platform_install_crash_handlers() {
     std::signal(SIGINT, [](int) { std::_Exit(0); });
     SetUnhandledExceptionFilter(crash_exception_filter);
+}
+
+void platform_close_window() {
+    close_window();
 }
 
 bool win32_is_key_down_native(int scancode) {
@@ -656,13 +663,4 @@ void win32_close_portaudio() {
         g_pa_stream = nullptr;
         Pa_Terminate();
     }
-}
-
-PaStream* win32_get_pa_stream() {
-    return g_pa_stream;
-}
-
-void win32_set_pa_stream_userdata(void* userdata) {
-    // This is a workaround since the callback is static
-    // The actual userdata is passed during Pa_OpenStream
 }

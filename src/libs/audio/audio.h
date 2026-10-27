@@ -155,9 +155,8 @@ public:
     void stop_music_stream(const std::string& name);
     void unload_music_stream(const std::string& name);
     void unload_all_music();
-#ifdef YATAIDON_PLATFORM_IOS
-    void suspend_ios_audio(bool suspended);
-#endif
+    // Pauses the SDL output device while a mobile app is backgrounded.
+    void set_suspended(bool suspended);
     void seek_music_stream(const std::string& name, float position);
 
 private:

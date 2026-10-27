@@ -18,9 +18,7 @@
 
 #include <cpr/cpr.h>
 
-#ifdef _WIN32
 #include "../../platform/platform_windows.h"
-#endif
 
 #if defined(__ANDROID__)
 #include <curl/curl.h>

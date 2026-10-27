@@ -11,9 +11,8 @@
 #include "../global_data.h"
 #include "han_fold_table.h"
 
-#if defined(_WIN32)
 #include "../../platform/platform_windows.h"
-#elif defined(YATAIDON_HAVE_ICONV)
+#if !defined(_WIN32) && defined(YATAIDON_HAVE_ICONV)
 #include <iconv.h>
 #endif
 

@@ -11,9 +11,7 @@
 #include "box_back.h"
 #include "box_song_osu.h"
 #include "color_utils.h"
-#ifdef _WIN32
 #include "../../../platform/platform_windows.h"
-#endif
 #ifdef SUPPORT_FUMEN
 #include "../../../libs/optional/gen3.h"
 #include "../../../libs/optional/gen4.h"

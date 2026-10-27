@@ -2,18 +2,10 @@
 
 #include <chrono>
 
-#ifdef YATAIDON_PLATFORM_IOS
-#include "../platform/platform_ios.h"
-#endif
+#include "../platform/platform.h"
 
 inline double get_current_ms() {
-#ifdef YATAIDON_PLATFORM_IOS
-    return ios_game_time_ms();
-#else
-    using namespace std::chrono;
-    auto now = steady_clock::now();
-    return duration<double, std::milli>(now.time_since_epoch()).count();
-#endif
+    return platform_game_time_ms();
 }
 
 extern double g_frame_ms;

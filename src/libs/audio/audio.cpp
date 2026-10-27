@@ -3,17 +3,8 @@
 #include "../profiler.h"
 #include "loudness.h"
 #include "spdlog/spdlog.h"
-#ifdef YATAIDON_PLATFORM_IOS
 #include "../../platform/platform_ios.h"
-#endif
-#ifdef _WIN32
 #include "../../platform/platform_windows.h"
-#endif
-
-// Global iOS audio stream for platform access
-#ifdef YATAIDON_PLATFORM_IOS
-SDL_AudioStream* g_ios_audio_stream = nullptr;
-#endif
 #ifdef SUPPORT_FUMEN
 #include "../optional/nub.h"
 #include "../optional/nus3bank.h"
@@ -755,6 +746,17 @@ bool AudioEngine::init_rtaudio_device(RtAudio::Api api, const char* label) {
 }
 #endif
 
+void AudioEngine::set_suspended(bool suspended) {
+    if (!sdl_stream) {
+        return;
+    }
+    if (suspended) {
+        SDL_PauseAudioStreamDevice(sdl_stream);
+    } else {
+        SDL_ResumeAudioStreamDevice(sdl_stream);
+    }
+}
+
 bool AudioEngine::init_sdl3_device() {
 #ifdef YATAIDON_PLATFORM_IOS
     ios_request_audio_buffer();
@@ -806,10 +808,6 @@ bool AudioEngine::init_sdl3_device() {
         }
         return false;
     }
-
-#ifdef YATAIDON_PLATFORM_IOS
-    g_ios_audio_stream = sdl_stream;
-#endif
 
     if (!SDL_ResumeAudioStreamDevice(sdl_stream)) {
         spdlog::error("Failed to start SDL audio stream: {}", SDL_GetError());

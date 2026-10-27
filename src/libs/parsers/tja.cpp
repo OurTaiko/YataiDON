@@ -21,9 +21,7 @@
 #include "../math/md5.h"
 #include "../profiler.h"
 
-#ifdef _WIN32
 #include "platform/platform_windows.h"
-#endif
 
 double get_ms_per_measure(double bpm_val, double time_sig) {
     if (bpm_val == 0) {
