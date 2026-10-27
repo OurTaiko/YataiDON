@@ -81,14 +81,19 @@ int get_pixel_data_size(int width, int height, int format) {
 
 Image load_image(const char* path) {
     std::vector<unsigned char> file = load_file_bytes(path);
+    Image image = load_image_from_memory(file);
+    if (!image.data && !file.empty()) {
+        spdlog::warn("IMAGE: [{}] Failed to load data: {}", path, stbi_failure_reason());
+    }
+    return image;
+}
+
+Image load_image_from_memory(std::span<const unsigned char> data) {
     Image image;
     int comp = 0;
     image.data =
-        stbi_load_from_memory(file.data(), static_cast<int>(file.size()), &image.width, &image.height, &comp, 0);
+        stbi_load_from_memory(data.data(), static_cast<int>(data.size()), &image.width, &image.height, &comp, 0);
     if (!image.data) {
-        if (!file.empty()) {
-            spdlog::warn("IMAGE: [{}] Failed to load data: {}", path, stbi_failure_reason());
-        }
         return Image{};
     }
     static constexpr int formats[] = {0, pixel_format::GRAYSCALE, pixel_format::GRAY_ALPHA, pixel_format::RGB8,

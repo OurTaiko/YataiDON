@@ -13,10 +13,20 @@
 #include <string>
 #include <vector>
 
+#define CGLTF_IMPLEMENTATION
+#include <cgltf.h>
+
 #include "gfx/sdl_compat.h"
 #include "shaders/spirv/fs_2d.sc.bin.h"
 #include "shaders/spirv/fs_colortransform.sc.bin.h"
+#include "shaders/spirv/fs_cutout.sc.bin.h"
+#include "shaders/spirv/fs_mesh.sc.bin.h"
+#include "shaders/spirv/fs_null.sc.bin.h"
+#include "shaders/spirv/fs_outline.sc.bin.h"
+#include "shaders/spirv/fs_outline_fxaa.sc.bin.h"
 #include "shaders/spirv/vs_2d.sc.bin.h"
+#include "shaders/spirv/vs_mesh.sc.bin.h"
+#include "shaders/spirv/vs_outline.sc.bin.h"
 
 namespace {
 
@@ -513,6 +523,10 @@ namespace {
         return {c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, tx, ty, 0, 1};
     }
 
+    // defined with the 3D code at the end
+    void init_3d();
+    void shutdown_3d();
+
 } // namespace
 
 // ---- window ---------------------------------------------------------------------------
@@ -569,6 +583,7 @@ void init_window(int width, int height, const char* title) {
         .end();
     s_tex_color = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
     programs.push_back(make_program(vs_2d_spv, sizeof(vs_2d_spv), fs_2d_spv, sizeof(fs_2d_spv)));
+    init_3d();
 
     Image white = gen_image_color(1, 1, Color::WHITE);
     white_texture = upload_texture(white, false);
@@ -601,6 +616,7 @@ void close_window() {
             }
         }
     }
+    shutdown_3d();
     targets.clear();
     textures.clear();
     programs.clear();
@@ -899,10 +915,28 @@ void update_texture(Texture tex, const void* pixels) {
     }
 }
 
-Image load_image_from_texture(Texture) {
-    // ponytail: GPU readback (blit + readTexture, 2 frames late) not implemented; only chara_3d recolor uses it
-    spdlog::warn("bgfx: load_image_from_texture not implemented yet");
-    return {};
+Image load_image_from_texture(Texture tex) {
+    const TextureSlot* t = texture_slot(tex.id);
+    if (!t) {
+        return {};
+    }
+    flush();
+    // Blit mip 0 into a CPU-readable copy and run frames until it arrives. Those are FLUSH frames
+    // (nothing presented); the game reads textures back while loading (Chara3D recolors).
+    bgfx::TextureHandle staging =
+        bgfx::createTexture2D((uint16_t)tex.width, (uint16_t)tex.height, false, 1, bgfx::TextureFormat::RGBA8,
+                              BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+    bgfx::TextureRegion dst, src;
+    dst.init(staging);
+    src.init(t->handle);
+    bgfx::blit(pass.view, dst, src);
+    Image img = gen_image_color(tex.width, tex.height, Color::BLANK);
+    const uint32_t ready = bgfx::read(dst, img.data);
+    for (int i = 0; i < 8 && bgfx::frame(BGFX_FRAME_FLUSH) < ready; i++) {
+    }
+    pending_upload_bytes = 0;
+    bgfx::destroy(staging);
+    return img;
 }
 
 Image load_image_from_screen() {
@@ -914,19 +948,34 @@ Image load_image_from_screen() {
 // ---- shaders --------------------------------------------------------------------------
 
 Shader load_shader(const char* vs_path, const char* fs_path) {
-    (void)vs_path; // every 2D shader pairs with the default vertex stage (dummy.vs)
+    // The game's GLSL files, by fragment stage, as their shader/bgfx ports. The vertex stage
+    // follows from it: 2D (dummy.vs / pass.vs), mesh (raylib's default) or the outline hull.
+    struct Port {
+        const char* fs;
+        const uint8_t *vs_bin, *fs_bin;
+        uint32_t vs_size, fs_size;
+    };
+#define PORT(name, vs, fs)                                                                                             \
+    {                                                                                                                  \
+        name, vs##_spv, fs##_spv, sizeof(vs##_spv), sizeof(fs##_spv)                                                   \
+    }
+    static const Port ports[] = {
+        PORT("colortransform.fs", vs_2d, fs_colortransform),
+        PORT("outline_fxaa.fs", vs_2d, fs_outline_fxaa),
+        PORT("cutout.fs", vs_mesh, fs_cutout),
+        PORT("null.fs", vs_mesh, fs_null),
+        PORT("outline.fs", vs_outline, fs_outline),
+    };
+#undef PORT
     const std::string fs = fs_path ? fs_path : "";
     Shader shader;
-    if (fs.ends_with("colortransform.fs")) {
-        shader.id = add_program(
-            make_program(vs_2d_spv, sizeof(vs_2d_spv), fs_colortransform_spv, sizeof(fs_colortransform_spv)));
-    } else {
-        static bool warned = false;
-        if (!warned) {
-            spdlog::warn("bgfx: shader '{}' not ported yet (3D shaders come with model support)", fs);
-            warned = true;
+    for (const Port& p : ports) {
+        if (fs.ends_with(std::string("/") + p.fs)) {
+            shader.id = add_program(make_program(p.vs_bin, p.vs_size, p.fs_bin, p.fs_size));
+            return shader;
         }
     }
+    spdlog::warn("bgfx: shader '{}' + '{}' not ported", vs_path ? vs_path : "default", fs);
     return shader;
 }
 
@@ -1169,37 +1218,1016 @@ Font get_font_default() {
     return default_font;
 }
 
-// ---- 3D (not ported yet) -----------------
+// ---- 3D -------------------------------------------------------------------------------
+// Models load from glTF with cgltf and are CPU-skinned, with raylib 6.2's semantics
+// (rmodels.c LoadGLTF / LoadModelAnimationsGLTF / UpdateModelAnimation): material 0 is a
+// default one, node world transforms are baked into the vertices, animations are sampled at 60 fps.
+
+namespace {
+
+    constexpr int MAX_MATERIAL_MAPS = 12; // raylib's, so any map_type indexes safely
+    constexpr float GLTF_FRAMERATE = 60.0f;
+
+    // raylib's vertex buffer indices for update_mesh_buffer
+    constexpr int MESH_BUFFER_POSITION = 0, MESH_BUFFER_TEXCOORD = 1, MESH_BUFFER_NORMAL = 2;
+
+    Mat4 mat4_identity() {
+        return matrix_scale(1, 1, 1);
+    }
+
+    std::array<float, 16> to_bgfx(const Mat4& m) { // column-major floats, like rlMatrixToFloat
+        return {m.m0, m.m1, m.m2, m.m3, m.m4, m.m5, m.m6, m.m7, m.m8, m.m9, m.m10, m.m11, m.m12, m.m13, m.m14, m.m15};
+    }
+
+    Mat4 from_gltf(const float* f) { // cgltf column-major floats
+        Mat4 m;
+        m.m0 = f[0], m.m1 = f[1], m.m2 = f[2], m.m3 = f[3];
+        m.m4 = f[4], m.m5 = f[5], m.m6 = f[6], m.m7 = f[7];
+        m.m8 = f[8], m.m9 = f[9], m.m10 = f[10], m.m11 = f[11];
+        m.m12 = f[12], m.m13 = f[13], m.m14 = f[14], m.m15 = f[15];
+        return m;
+    }
+
+    Mat4 matrix_transpose(const Mat4& m) {
+        Mat4 r;
+        r.m0 = m.m0, r.m1 = m.m4, r.m2 = m.m8, r.m3 = m.m12;
+        r.m4 = m.m1, r.m5 = m.m5, r.m6 = m.m9, r.m7 = m.m13;
+        r.m8 = m.m2, r.m9 = m.m6, r.m10 = m.m10, r.m11 = m.m14;
+        r.m12 = m.m3, r.m13 = m.m7, r.m14 = m.m11, r.m15 = m.m15;
+        return r;
+    }
+
+    // raymath MatrixInvert
+    Mat4 matrix_invert(const Mat4& mat) {
+        const float a00 = mat.m0, a01 = mat.m1, a02 = mat.m2, a03 = mat.m3;
+        const float a10 = mat.m4, a11 = mat.m5, a12 = mat.m6, a13 = mat.m7;
+        const float a20 = mat.m8, a21 = mat.m9, a22 = mat.m10, a23 = mat.m11;
+        const float a30 = mat.m12, a31 = mat.m13, a32 = mat.m14, a33 = mat.m15;
+        const float b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10;
+        const float b03 = a01 * a12 - a02 * a11, b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+        const float b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, b08 = a20 * a33 - a23 * a30;
+        const float b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+        const float inv = 1.0f / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06);
+        Mat4 r;
+        r.m0 = (a11 * b11 - a12 * b10 + a13 * b09) * inv;
+        r.m1 = (-a01 * b11 + a02 * b10 - a03 * b09) * inv;
+        r.m2 = (a31 * b05 - a32 * b04 + a33 * b03) * inv;
+        r.m3 = (-a21 * b05 + a22 * b04 - a23 * b03) * inv;
+        r.m4 = (-a10 * b11 + a12 * b08 - a13 * b07) * inv;
+        r.m5 = (a00 * b11 - a02 * b08 + a03 * b07) * inv;
+        r.m6 = (-a30 * b05 + a32 * b02 - a33 * b01) * inv;
+        r.m7 = (a20 * b05 - a22 * b02 + a23 * b01) * inv;
+        r.m8 = (a10 * b10 - a11 * b08 + a13 * b06) * inv;
+        r.m9 = (-a00 * b10 + a01 * b08 - a03 * b06) * inv;
+        r.m10 = (a30 * b04 - a31 * b02 + a33 * b00) * inv;
+        r.m11 = (-a20 * b04 + a21 * b02 - a23 * b00) * inv;
+        r.m12 = (-a10 * b09 + a11 * b07 - a12 * b06) * inv;
+        r.m13 = (a00 * b09 - a01 * b07 + a02 * b06) * inv;
+        r.m14 = (-a30 * b03 + a31 * b01 - a32 * b00) * inv;
+        r.m15 = (a20 * b03 - a21 * b01 + a22 * b00) * inv;
+        return r;
+    }
+
+    Vec3 v3_add(Vec3 a, Vec3 b) {
+        return {a.x + b.x, a.y + b.y, a.z + b.z};
+    }
+    Vec3 v3_sub(Vec3 a, Vec3 b) {
+        return {a.x - b.x, a.y - b.y, a.z - b.z};
+    }
+    Vec3 v3_mul(Vec3 a, Vec3 b) {
+        return {a.x * b.x, a.y * b.y, a.z * b.z};
+    }
+    Vec3 v3_scale(Vec3 a, float s) {
+        return {a.x * s, a.y * s, a.z * s};
+    }
+    float v3_dot(Vec3 a, Vec3 b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+    Vec3 v3_cross(Vec3 a, Vec3 b) {
+        return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    }
+    Vec3 v3_lerp(Vec3 a, Vec3 b, float t) {
+        return v3_add(a, v3_scale(v3_sub(b, a), t));
+    }
+    Vec3 v3_normalize(Vec3 v) {
+        const float len = std::sqrt(v3_dot(v, v));
+        return len == 0.0f ? v : v3_scale(v, 1.0f / len);
+    }
+    // the 3x3 part of m (normal transforms)
+    Vec3 v3_transform_dir(Vec3 v, const Mat4& m) {
+        return {m.m0 * v.x + m.m4 * v.y + m.m8 * v.z, m.m1 * v.x + m.m5 * v.y + m.m9 * v.z,
+                m.m2 * v.x + m.m6 * v.y + m.m10 * v.z};
+    }
+
+    // raymath QuaternionMultiply
+    Vec4 quat_mul(Vec4 a, Vec4 b) {
+        return {a.x * b.w + a.w * b.x + a.y * b.z - a.z * b.y, a.y * b.w + a.w * b.y + a.z * b.x - a.x * b.z,
+                a.z * b.w + a.w * b.z + a.x * b.y - a.y * b.x, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+    }
+
+    // raymath Vector3RotateByQuaternion
+    Vec3 quat_rotate(Vec3 v, Vec4 q) {
+        return {v.x * (q.x * q.x + q.w * q.w - q.y * q.y - q.z * q.z) + v.y * (2 * q.x * q.y - 2 * q.w * q.z) +
+                    v.z * (2 * q.x * q.z + 2 * q.w * q.y),
+                v.x * (2 * q.w * q.z + 2 * q.x * q.y) + v.y * (q.w * q.w - q.x * q.x + q.y * q.y - q.z * q.z) +
+                    v.z * (-2 * q.w * q.x + 2 * q.y * q.z),
+                v.x * (-2 * q.w * q.y + 2 * q.x * q.z) + v.y * (2 * q.w * q.x + 2 * q.y * q.z) +
+                    v.z * (q.w * q.w - q.x * q.x - q.y * q.y + q.z * q.z)};
+    }
+
+    // raymath QuaternionSlerp (with its nlerp for close rotations)
+    Vec4 quat_slerp(Vec4 a, Vec4 b, float t) {
+        float cos_half = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+        if (cos_half < 0) {
+            b = {-b.x, -b.y, -b.z, -b.w};
+            cos_half = -cos_half;
+        }
+        if (std::fabs(cos_half) >= 1.0f) {
+            return a;
+        }
+        if (cos_half > 0.95f) {
+            Vec4 r{a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), a.z + t * (b.z - a.z), a.w + t * (b.w - a.w)};
+            float len = std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w);
+            len = len == 0.0f ? 1.0f : 1.0f / len;
+            return {r.x * len, r.y * len, r.z * len, r.w * len};
+        }
+        const float half = std::acos(cos_half), sin_half = std::sqrt(1.0f - cos_half * cos_half);
+        if (std::fabs(sin_half) < 0.000001f) {
+            return {a.x * 0.5f + b.x * 0.5f, a.y * 0.5f + b.y * 0.5f, a.z * 0.5f + b.z * 0.5f, a.w * 0.5f + b.w * 0.5f};
+        }
+        const float ra = std::sin((1 - t) * half) / sin_half, rb = std::sin(t * half) / sin_half;
+        return {a.x * ra + b.x * rb, a.y * ra + b.y * rb, a.z * ra + b.z * rb, a.w * ra + b.w * rb};
+    }
+
+    // raymath QuaternionToMatrix
+    Mat4 quat_to_matrix(Vec4 q) {
+        Mat4 r = mat4_identity();
+        const float a2 = q.x * q.x, b2 = q.y * q.y, c2 = q.z * q.z;
+        const float ac = q.x * q.z, ab = q.x * q.y, bc = q.y * q.z;
+        const float ad = q.w * q.x, bd = q.w * q.y, cd = q.w * q.z;
+        r.m0 = 1 - 2 * (b2 + c2);
+        r.m1 = 2 * (ab + cd);
+        r.m2 = 2 * (ac - bd);
+        r.m4 = 2 * (ab - cd);
+        r.m5 = 1 - 2 * (a2 + c2);
+        r.m6 = 2 * (bc + ad);
+        r.m8 = 2 * (ac + bd);
+        r.m9 = 2 * (bc - ad);
+        r.m10 = 1 - 2 * (a2 + b2);
+        return r;
+    }
+
+    // raymath QuaternionFromMatrix
+    Vec4 quat_from_matrix(const Mat4& m) {
+        const float w4 = m.m0 + m.m5 + m.m10, x4 = m.m0 - m.m5 - m.m10;
+        const float y4 = m.m5 - m.m0 - m.m10, z4 = m.m10 - m.m0 - m.m5;
+        int biggest = 0;
+        float big4 = w4;
+        if (x4 > big4) {
+            big4 = x4;
+            biggest = 1;
+        }
+        if (y4 > big4) {
+            big4 = y4;
+            biggest = 2;
+        }
+        if (z4 > big4) {
+            big4 = z4;
+            biggest = 3;
+        }
+        const float val = std::sqrt(big4 + 1.0f) * 0.5f, mult = 0.25f / val;
+        switch (biggest) {
+        case 0:
+            return {(m.m6 - m.m9) * mult, (m.m8 - m.m2) * mult, (m.m1 - m.m4) * mult, val};
+        case 1:
+            return {val, (m.m1 + m.m4) * mult, (m.m8 + m.m2) * mult, (m.m6 - m.m9) * mult};
+        case 2:
+            return {(m.m1 + m.m4) * mult, val, (m.m6 + m.m9) * mult, (m.m8 - m.m2) * mult};
+        default:
+            return {(m.m8 + m.m2) * mult, (m.m6 + m.m9) * mult, val, (m.m1 - m.m4) * mult};
+        }
+    }
+
+    // raymath MatrixDecompose
+    Transform matrix_decompose(const Mat4& mat) {
+        constexpr float eps = 1e-9f;
+        Transform t;
+        t.translation = {mat.m12, mat.m13, mat.m14};
+        Vec3 c[3] = {{mat.m0, mat.m1, mat.m2}, {mat.m4, mat.m5, mat.m6}, {mat.m8, mat.m9, mat.m10}};
+        float stab = eps;
+        for (const Vec3& v : c) {
+            stab = std::max({stab, std::fabs(v.x), std::fabs(v.y), std::fabs(v.z)});
+        }
+        for (Vec3& v : c) {
+            v = v3_scale(v, 1.0f / stab);
+        }
+        Vec3 scl;
+        scl.x = std::sqrt(v3_dot(c[0], c[0]));
+        if (scl.x > eps) {
+            c[0] = v3_scale(c[0], 1.0f / scl.x);
+        }
+        c[1] = v3_sub(c[1], v3_scale(c[0], v3_dot(c[0], c[1])));
+        scl.y = std::sqrt(v3_dot(c[1], c[1]));
+        if (scl.y > eps) {
+            c[1] = v3_scale(c[1], 1.0f / scl.y);
+        }
+        c[2] = v3_sub(c[2], v3_scale(c[0], v3_dot(c[0], c[2])));
+        c[2] = v3_sub(c[2], v3_scale(c[1], v3_dot(c[1], c[2])));
+        scl.z = std::sqrt(v3_dot(c[2], c[2]));
+        if (scl.z > eps) {
+            c[2] = v3_scale(c[2], 1.0f / scl.z);
+        }
+        if (v3_dot(c[0], v3_cross(c[1], c[2])) < 0) {
+            scl = v3_scale(scl, -1.0f);
+            for (Vec3& v : c) {
+                v = v3_scale(v, -1.0f);
+            }
+        }
+        t.scale = v3_scale(scl, stab);
+        Mat4 rot = mat4_identity();
+        rot.m0 = c[0].x, rot.m4 = c[1].x, rot.m8 = c[2].x;
+        rot.m1 = c[0].y, rot.m5 = c[1].y, rot.m9 = c[2].y;
+        rot.m2 = c[0].z, rot.m6 = c[1].z, rot.m10 = c[2].z;
+        t.rotation = quat_from_matrix(rot);
+        return t;
+    }
+
+    // scale, then rotation, then translation (raylib's bone matrix order)
+    Mat4 transform_matrix(const Transform& t) {
+        return matrix_multiply(
+            matrix_multiply(matrix_scale(t.scale.x, t.scale.y, t.scale.z), quat_to_matrix(t.rotation)),
+            matrix_translate(t.translation.x, t.translation.y, t.translation.z));
+    }
+
+    // ---- GPU meshes ----
+
+    struct MeshVertex {
+        float x, y, z, nx, ny, nz, u, v;
+        uint32_t rgba;
+    };
+
+    struct MeshSlot {
+        bgfx::DynamicVertexBufferHandle vb = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle ib = BGFX_INVALID_HANDLE;
+        std::vector<MeshVertex> cpu; // what vb holds, patched by update_mesh_buffer
+    };
+
+    bgfx::VertexLayout mesh_layout;
+    std::vector<MeshSlot> mesh_slots; // id = index + 1 (Mesh::vaoId)
+    ProgramSlot mesh_program;         // materials without a shader of their own
+    bgfx::UniformHandle u_col_diffuse = BGFX_INVALID_HANDLE;
+
+    // 3D mode and raylib's face culling state (on, back faces, front = counter-clockwise)
+    bool in_3d = false;
+    bool backface_culling = true;
+    bool cull_front = false;
+
+    MeshSlot* mesh_slot(unsigned id) {
+        return id && id <= mesh_slots.size() && bgfx::isValid(mesh_slots[id - 1].vb) ? &mesh_slots[id - 1] : nullptr;
+    }
+
+    void upload_mesh(Mesh& mesh) {
+        if (mesh.vertexCount <= 0 || !mesh.vertices) {
+            return;
+        }
+        MeshSlot slot;
+        slot.cpu.resize(mesh.vertexCount);
+        for (int i = 0; i < mesh.vertexCount; i++) {
+            MeshVertex& v = slot.cpu[i];
+            v.x = mesh.vertices[i * 3], v.y = mesh.vertices[i * 3 + 1], v.z = mesh.vertices[i * 3 + 2];
+            if (mesh.normals) {
+                v.nx = mesh.normals[i * 3], v.ny = mesh.normals[i * 3 + 1], v.nz = mesh.normals[i * 3 + 2];
+            } else {
+                v.nx = v.ny = v.nz = 0.0f;
+            }
+            if (mesh.texcoords) {
+                v.u = mesh.texcoords[i * 2], v.v = mesh.texcoords[i * 2 + 1];
+            } else {
+                v.u = v.v = 0.0f;
+            }
+            v.rgba = mesh.colors ? (uint32_t)mesh.colors[i * 4] | (uint32_t)mesh.colors[i * 4 + 1] << 8 |
+                                       (uint32_t)mesh.colors[i * 4 + 2] << 16 | (uint32_t)mesh.colors[i * 4 + 3] << 24
+                                 : 0xffffffffu; // raylib's default for a missing colour attribute
+        }
+        slot.vb = bgfx::createDynamicVertexBuffer(
+            bgfx::copy(slot.cpu.data(), (uint32_t)(slot.cpu.size() * sizeof(MeshVertex))), mesh_layout);
+        if (mesh.indices) {
+            slot.ib = bgfx::createIndexBuffer(
+                bgfx::copy(mesh.indices, (uint32_t)(mesh.triangleCount * 3 * sizeof(unsigned short))));
+        }
+        mesh.vaoId = add_slot(mesh_slots, std::move(slot), [](const MeshSlot& s) { return bgfx::isValid(s.vb); });
+    }
+
+    void unload_mesh(Mesh& mesh) {
+        if (MeshSlot* slot = mesh_slot(mesh.vaoId)) {
+            bgfx::destroy(slot->vb);
+            if (bgfx::isValid(slot->ib)) {
+                bgfx::destroy(slot->ib);
+            }
+            *slot = MeshSlot{};
+        }
+        for (void* p :
+             {(void*)mesh.vertices, (void*)mesh.texcoords, (void*)mesh.texcoords2, (void*)mesh.normals,
+              (void*)mesh.tangents, (void*)mesh.colors, (void*)mesh.indices, (void*)mesh.boneIndices,
+              (void*)mesh.boneWeights, (void*)mesh.animVertices, (void*)mesh.animNormals, (void*)mesh.vboId}) {
+            std::free(p);
+        }
+    }
+
+    // raylib's GL state as bgfx state: face culling, then y-flipped targets reverse the winding
+    uint64_t cull_state() {
+        if (!backface_culling) {
+            return 0;
+        }
+        return (cull_front != pass.flip) ? BGFX_STATE_CULL_CCW : BGFX_STATE_CULL_CW;
+    }
+
+    void submit_mesh(const Mesh& mesh, const Material& material, const Mat4& transform, Color tint) {
+        const MeshSlot* slot = mesh_slot(mesh.vaoId);
+        if (!slot) {
+            return;
+        }
+        flush();
+        ProgramSlot& prog = is_shader_valid(material.shader) ? programs[material.shader.id] : mesh_program;
+        const MaterialMap& diffuse = material.maps[material_map::DIFFUSE];
+        const TextureSlot* tex = texture_slot(diffuse.texture.id);
+        if (!tex) {
+            tex = texture_slot(white_texture);
+        }
+        const Color c = diffuse.color;
+        const float col[4] = {(float)(c.r * tint.r / 255) / 255.0f, (float)(c.g * tint.g / 255) / 255.0f,
+                              (float)(c.b * tint.b / 255) / 255.0f, (float)(c.a * tint.a / 255) / 255.0f};
+        const auto model = to_bgfx(transform);
+        bgfx::setTransform(model.data());
+        bgfx::setVertexBuffer(0, slot->vb);
+        if (bgfx::isValid(slot->ib)) {
+            bgfx::setIndexBuffer(slot->ib);
+        }
+        bgfx::setTexture(0, s_tex_color, tex->handle, sampler_flags(*tex));
+        bgfx::setUniform(u_col_diffuse, col);
+        for (size_t i = 0; i < prog.uniforms.size(); i++) {
+            bgfx::setUniform(prog.uniforms[i], prog.values[i].data());
+        }
+        if (cur_scissor.on) {
+            bgfx::setScissor(cur_scissor.x, cur_scissor.y, cur_scissor.w, cur_scissor.h);
+        }
+        const uint64_t depth = in_3d ? BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LEQUAL : 0;
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | depth | cur_blend | cull_state());
+        bgfx::submit(pass.view, prog.program);
+        submits_this_frame++;
+        pass.submits++;
+        screen_drawn |= pass.target == 0;
+    }
+
+    // ---- glTF ----
+
+    // Reads `count` vec<n> floats of an attribute, normalizing integer data the way the accessor says.
+    float* read_floats(const cgltf_accessor* acc, int n) {
+        auto* out = static_cast<float*>(std::calloc(acc->count * n, sizeof(float)));
+        cgltf_accessor_unpack_floats(acc, out, acc->count * n);
+        return out;
+    }
+
+    Image load_gltf_image(const cgltf_image* img, const std::filesystem::path& dir) {
+        if (!img) {
+            return {};
+        }
+        if (img->buffer_view && img->buffer_view->buffer->data) {
+            const auto* bytes =
+                static_cast<const unsigned char*>(img->buffer_view->buffer->data) + img->buffer_view->offset;
+            return load_image_from_memory({bytes, img->buffer_view->size});
+        }
+        if (img->uri && std::strncmp(img->uri, "data:", 5) != 0) {
+            return load_image((dir / img->uri).string().c_str());
+        }
+        // ponytail: base64 data-URI images unsupported; the skins' .glb files embed buffer views
+        spdlog::warn("MODEL: glTF data-URI images are not supported");
+        return {};
+    }
+
+    BoneInfo* load_bones(const cgltf_skin& skin, unsigned& count) {
+        count = (unsigned)skin.joints_count;
+        auto* bones = static_cast<BoneInfo*>(std::calloc(skin.joints_count, sizeof(BoneInfo)));
+        for (size_t i = 0; i < skin.joints_count; i++) {
+            const cgltf_node* node = skin.joints[i];
+            if (node->name) {
+                std::snprintf(bones[i].name, sizeof(bones[i].name), "%s", node->name);
+            }
+            // nearest ancestor that is also a joint (exporters put plain transform nodes between)
+            bones[i].parent = -1;
+            for (const cgltf_node* a = node->parent; a && bones[i].parent == -1; a = a->parent) {
+                for (size_t j = 0; j < skin.joints_count; j++) {
+                    if (skin.joints[j] == a) {
+                        bones[i].parent = (int)j;
+                        break;
+                    }
+                }
+            }
+        }
+        return bones;
+    }
+
+    struct GltfFile {
+        cgltf_data* data = nullptr;
+        explicit GltfFile(const char* path) {
+            cgltf_options options{};
+            if (cgltf_parse_file(&options, path, &data) != cgltf_result_success) {
+                spdlog::warn("MODEL: [{}] Failed to load glTF data", path);
+                data = nullptr;
+            } else if (cgltf_load_buffers(&options, data, path) != cgltf_result_success) {
+                spdlog::warn("MODEL: [{}] Failed to load glTF buffers", path);
+                cgltf_free(data);
+                data = nullptr;
+            }
+        }
+        ~GltfFile() {
+            if (data) {
+                cgltf_free(data);
+            }
+        }
+        GltfFile(const GltfFile&) = delete;
+        GltfFile& operator=(const GltfFile&) = delete;
+    };
+
+    void load_primitive(Mesh& mesh, const cgltf_primitive& prim, const Mat4& world, const Mat4& world_normals) {
+        for (size_t a = 0; a < prim.attributes_count; a++) {
+            const cgltf_attribute& attr = prim.attributes[a];
+            const cgltf_accessor* acc = attr.data;
+            switch (attr.type) {
+            case cgltf_attribute_type_position:
+                if (acc->type == cgltf_type_vec3 && !mesh.vertices) {
+                    mesh.vertexCount = (int)acc->count;
+                    mesh.vertices = read_floats(acc, 3);
+                    for (int k = 0; k < mesh.vertexCount; k++) {
+                        float* v = mesh.vertices + k * 3;
+                        const Vec3 t = vector3_transform({v[0], v[1], v[2]}, world);
+                        v[0] = t.x, v[1] = t.y, v[2] = t.z;
+                    }
+                }
+                break;
+            case cgltf_attribute_type_normal:
+                if (acc->type == cgltf_type_vec3 && !mesh.normals) {
+                    mesh.normals = read_floats(acc, 3);
+                    for (size_t k = 0; k < acc->count; k++) {
+                        float* n = mesh.normals + k * 3;
+                        const Vec3 t = vector3_transform({n[0], n[1], n[2]}, world_normals);
+                        n[0] = t.x, n[1] = t.y, n[2] = t.z;
+                    }
+                }
+                break;
+            case cgltf_attribute_type_texcoord:
+                if (acc->type == cgltf_type_vec2 && attr.index <= 1) {
+                    float*& dst = attr.index == 0 ? mesh.texcoords : mesh.texcoords2;
+                    if (!dst) {
+                        dst = read_floats(acc, 2);
+                    }
+                }
+                break;
+            case cgltf_attribute_type_color:
+                if ((acc->type == cgltf_type_vec3 || acc->type == cgltf_type_vec4) && !mesh.colors) {
+                    const int n = acc->type == cgltf_type_vec4 ? 4 : 3;
+                    mesh.colors = static_cast<unsigned char*>(std::malloc(acc->count * 4));
+                    for (size_t k = 0; k < acc->count; k++) {
+                        unsigned char* c = mesh.colors + k * 4;
+                        c[3] = 255;
+                        if (acc->component_type == cgltf_component_type_r_32f) {
+                            float f[4] = {};
+                            cgltf_accessor_read_float(acc, k, f, n);
+                            for (int i = 0; i < n; i++) {
+                                c[i] = (unsigned char)(f[i] * 255.0f); // truncated, as raylib
+                            }
+                        } else {
+                            cgltf_uint u[4] = {};
+                            cgltf_accessor_read_uint(acc, k, u, n);
+                            const bool wide = acc->component_type == cgltf_component_type_r_16u;
+                            for (int i = 0; i < n; i++) {
+                                c[i] = wide ? (unsigned char)((float)u[i] / 65535.0f * 255.0f) : (unsigned char)u[i];
+                            }
+                        }
+                    }
+                }
+                break;
+            case cgltf_attribute_type_joints:
+                if (acc->type == cgltf_type_vec4 && !mesh.boneIndices) {
+                    mesh.boneIndices = static_cast<unsigned char*>(std::calloc(acc->count * 4, 1));
+                    for (size_t k = 0; k < acc->count; k++) {
+                        cgltf_uint u[4] = {};
+                        cgltf_accessor_read_uint(acc, k, u, 4);
+                        for (int i = 0; i < 4; i++) {
+                            mesh.boneIndices[k * 4 + i] = (unsigned char)u[i]; // raylib's u8 bone ids
+                        }
+                    }
+                }
+                break;
+            case cgltf_attribute_type_weights:
+                if (acc->type == cgltf_type_vec4 && !mesh.boneWeights) {
+                    mesh.boneWeights = read_floats(acc, 4);
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        if (prim.indices && prim.indices->buffer_view) {
+            const cgltf_accessor* acc = prim.indices;
+            mesh.triangleCount = (int)acc->count / 3;
+            mesh.indices = static_cast<unsigned short*>(std::malloc(acc->count * sizeof(unsigned short)));
+            for (size_t k = 0; k < acc->count; k++) {
+                mesh.indices[k] = (unsigned short)cgltf_accessor_read_index(acc, k); // u32 truncated, as raylib
+            }
+        } else {
+            mesh.triangleCount = mesh.vertexCount / 3;
+        }
+    }
+
+    Material default_material() {
+        Material m;
+        m.maps = static_cast<MaterialMap*>(std::calloc(MAX_MATERIAL_MAPS, sizeof(MaterialMap)));
+        m.maps[material_map::DIFFUSE].color = Color::WHITE;
+        return m;
+    }
+
+    // raylib GetPoseAtTimeGLTF, step and linear only
+    template<int N>
+    void sample_channel(const cgltf_animation_channel* ch, float time, float* out) {
+        if (!ch) {
+            return;
+        }
+        const cgltf_accessor* input = ch->sampler->input;
+        const cgltf_accessor* output = ch->sampler->output;
+        if (output->component_type != cgltf_component_type_r_32f || input->count == 0) {
+            return;
+        }
+        float t0 = 0.0f, t1 = 0.0f;
+        int key = 0;
+        bool found = false;
+        for (int i = 0; i + 1 < (int)input->count; i++) {
+            cgltf_accessor_read_float(input, i, &t0, 1);
+            cgltf_accessor_read_float(input, i + 1, &t1, 1);
+            if (t0 <= time && time < t1) {
+                key = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found && input->count >= 2) {
+            key = (int)input->count - 2;
+            float first = 0.0f;
+            cgltf_accessor_read_float(input, 0, &first, 1);
+            if (time < first) {
+                key = 0;
+            }
+            cgltf_accessor_read_float(input, key, &t0, 1);
+            cgltf_accessor_read_float(input, key + 1, &t1, 1);
+        }
+        // ponytail: cubic-spline channels sample as step; animations.glb is all LINEAR
+        const bool step = ch->sampler->interpolation != cgltf_interpolation_type_linear ||
+                          std::fabs(t1 - t0) <= 0.000001f * std::max(1.0f, std::max(std::fabs(t0), std::fabs(t1))) ||
+                          input->count < 2;
+        float a[4] = {}, b[4] = {};
+        cgltf_accessor_read_float(output, key, a, N);
+        if (step) {
+            std::memcpy(out, a, N * sizeof(float));
+            return;
+        }
+        cgltf_accessor_read_float(output, key + 1, b, N);
+        const float t = std::clamp((time - t0) / std::max(t1 - t0, 0.000001f), 0.0f, 1.0f);
+        if constexpr (N == 4) {
+            const Vec4 q = quat_slerp({a[0], a[1], a[2], a[3]}, {b[0], b[1], b[2], b[3]}, t);
+            out[0] = q.x, out[1] = q.y, out[2] = q.z, out[3] = q.w;
+        } else {
+            for (int i = 0; i < N; i++) {
+                out[i] = a[i] + t * (b[i] - a[i]);
+            }
+        }
+    }
+
+    // raylib BuildPoseFromParentJoints: local joint transforms to model space
+    void build_pose_from_parents(const BoneInfo* bones, int count, Transform* t) {
+        for (int i = 0; i < count; i++) {
+            const int p = bones[i].parent;
+            if (p < 0 || p > i) {
+                continue; // root, or not topologically sorted (raylib skips those too)
+            }
+            t[i].rotation = quat_mul(t[p].rotation, t[i].rotation);
+            t[i].scale = v3_mul(t[i].scale, t[p].scale);
+            t[i].translation =
+                v3_add(quat_rotate(v3_mul(t[i].translation, t[p].scale), t[p].rotation), t[p].translation);
+        }
+    }
+
+    // raylib UpdateModelAnimationVertexBuffers: CPU skinning into animVertices/animNormals
+    void skin_meshes(Model& model) {
+        std::vector<Mat4> normal_mats(model.skeleton.boneCount);
+        for (unsigned b = 0; b < model.skeleton.boneCount; b++) {
+            normal_mats[b] = matrix_transpose(matrix_invert(model.boneMatrices[b]));
+        }
+        for (int m = 0; m < model.meshCount; m++) {
+            Mesh& mesh = model.meshes[m];
+            if (!mesh.boneWeights || !mesh.boneIndices) {
+                continue;
+            }
+            const size_t floats = (size_t)mesh.vertexCount * 3;
+            if (!mesh.animVertices) {
+                mesh.animVertices = static_cast<float*>(std::malloc(floats * sizeof(float)));
+            }
+            if (mesh.normals && !mesh.animNormals) {
+                mesh.animNormals = static_cast<float*>(std::malloc(floats * sizeof(float)));
+            }
+            bool changed = false;
+            for (int v = 0; v < mesh.vertexCount; v++) {
+                Vec3 pos{}, nrm{};
+                const Vec3 src{mesh.vertices[v * 3], mesh.vertices[v * 3 + 1], mesh.vertices[v * 3 + 2]};
+                const Vec3 src_n =
+                    mesh.normals ? Vec3{mesh.normals[v * 3], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2]} : Vec3{};
+                for (int j = 0; j < 4; j++) {
+                    const float w = mesh.boneWeights[v * 4 + j];
+                    const unsigned b = mesh.boneIndices[v * 4 + j];
+                    if (w == 0.0f || b >= model.skeleton.boneCount) {
+                        continue;
+                    }
+                    pos = v3_add(pos, v3_scale(vector3_transform(src, model.boneMatrices[b]), w));
+                    nrm = v3_add(nrm, v3_scale(v3_transform_dir(src_n, normal_mats[b]), w));
+                    changed = true;
+                }
+                mesh.animVertices[v * 3] = pos.x, mesh.animVertices[v * 3 + 1] = pos.y,
+                                      mesh.animVertices[v * 3 + 2] = pos.z;
+                if (mesh.animNormals) {
+                    mesh.animNormals[v * 3] = nrm.x, mesh.animNormals[v * 3 + 1] = nrm.y,
+                                         mesh.animNormals[v * 3 + 2] = nrm.z;
+                }
+            }
+            if (changed) {
+                const int bytes = mesh.vertexCount * 3 * (int)sizeof(float);
+                update_mesh_buffer(mesh, MESH_BUFFER_POSITION, mesh.animVertices, bytes, 0);
+                if (mesh.animNormals) {
+                    update_mesh_buffer(mesh, MESH_BUFFER_NORMAL, mesh.animNormals, bytes, 0);
+                }
+            }
+        }
+    }
+
+} // namespace
 
 Model load_model(const char* path) {
-    static bool warned = false;
-    if (!warned) {
-        spdlog::warn("bgfx: 3D models are not supported yet ({})", path);
-        warned = true;
-    }
     Model model;
-    model.transform = matrix_scale(1, 1, 1);
+    model.transform = mat4_identity();
+    GltfFile file(path);
+    const cgltf_data* data = file.data;
+    if (!data) {
+        return model;
+    }
+
+    for (size_t i = 0; i < data->nodes_count; i++) {
+        if (const cgltf_mesh* mesh = data->nodes[i].mesh) {
+            for (size_t p = 0; p < mesh->primitives_count; p++) {
+                if (mesh->primitives[p].has_draco_mesh_compression) {
+                    spdlog::warn("MODEL: [{}] Draco compression is not supported", path);
+                    return model;
+                }
+                model.meshCount += mesh->primitives[p].type == cgltf_primitive_type_triangles;
+            }
+        }
+    }
+    model.meshes = static_cast<Mesh*>(std::calloc(std::max(model.meshCount, 1), sizeof(Mesh)));
+    model.meshMaterial = static_cast<int*>(std::calloc(std::max(model.meshCount, 1), sizeof(int)));
+
+    // material 0 is the default one; glTF material i is i + 1
+    const std::filesystem::path dir = std::filesystem::path(path).parent_path();
+    model.materialCount = (int)data->materials_count + 1;
+    model.materials = static_cast<Material*>(std::calloc(model.materialCount, sizeof(Material)));
+    model.materials[0] = default_material();
+    for (size_t i = 0; i < data->materials_count; i++) {
+        Material& mat = model.materials[i + 1];
+        mat = default_material();
+        const cgltf_material& src = data->materials[i];
+        if (!src.has_pbr_metallic_roughness) {
+            continue;
+        }
+        const cgltf_pbr_metallic_roughness& pbr = src.pbr_metallic_roughness;
+        if (pbr.base_color_texture.texture) {
+            Image img = load_gltf_image(pbr.base_color_texture.texture->image, dir);
+            if (img.data) {
+                mat.maps[material_map::DIFFUSE].texture = load_texture_from_image(img);
+                unload_image(img);
+            }
+        }
+        Color& c = mat.maps[material_map::DIFFUSE].color;
+        c = Color((uint8_t)(pbr.base_color_factor[0] * 255), (uint8_t)(pbr.base_color_factor[1] * 255),
+                  (uint8_t)(pbr.base_color_factor[2] * 255), (uint8_t)(pbr.base_color_factor[3] * 255));
+    }
+
+    const cgltf_skin* skin = data->skins_count > 0 ? &data->skins[0] : nullptr;
+    int mesh_index = 0;
+    for (size_t i = 0; i < data->nodes_count; i++) {
+        const cgltf_node* node = &data->nodes[i];
+        if (!node->mesh) {
+            continue;
+        }
+        float wt[16];
+        cgltf_node_transform_world(node, wt);
+        const Mat4 world = from_gltf(wt);
+        const Mat4 world_normals = matrix_transpose(matrix_invert(world));
+        for (size_t p = 0; p < node->mesh->primitives_count; p++) {
+            const cgltf_primitive& prim = node->mesh->primitives[p];
+            if (prim.type != cgltf_primitive_type_triangles) {
+                continue;
+            }
+            Mesh& mesh = model.meshes[mesh_index];
+            load_primitive(mesh, prim, world, world_normals);
+            if (prim.material) {
+                model.meshMaterial[mesh_index] = (int)(prim.material - data->materials) + 1;
+            }
+            // a rigid mesh parented to a joint follows that joint
+            if (skin && !mesh.boneIndices && node->parent && !node->parent->mesh) {
+                for (size_t j = 0; j < skin->joints_count; j++) {
+                    if (skin->joints[j] == node->parent) {
+                        mesh.boneIndices = static_cast<unsigned char*>(std::calloc(mesh.vertexCount * 4, 1));
+                        mesh.boneWeights = static_cast<float*>(std::calloc(mesh.vertexCount * 4, sizeof(float)));
+                        for (int v = 0; v < mesh.vertexCount; v++) {
+                            mesh.boneIndices[v * 4] = (unsigned char)j;
+                            mesh.boneWeights[v * 4] = 1.0f;
+                        }
+                        break;
+                    }
+                }
+            }
+            mesh_index++;
+        }
+    }
+
+    if (skin) {
+        model.skeleton.bones = load_bones(*skin, model.skeleton.boneCount);
+        model.skeleton.bindPose = static_cast<Transform*>(std::calloc(model.skeleton.boneCount, sizeof(Transform)));
+        for (unsigned i = 0; i < model.skeleton.boneCount; i++) {
+            float m[16] = {};
+            Mat4 bind;
+            if (skin->inverse_bind_matrices && skin->inverse_bind_matrices->count >= skin->joints_count &&
+                cgltf_accessor_read_float(skin->inverse_bind_matrices, i, m, 16)) {
+                bind = matrix_invert(from_gltf(m));
+            } else {
+                cgltf_node_transform_world(skin->joints[i], m);
+                bind = from_gltf(m);
+            }
+            model.skeleton.bindPose[i] = matrix_decompose(bind);
+        }
+        if (model.skeleton.boneCount > 0) {
+            model.currentPose = static_cast<Transform*>(std::calloc(model.skeleton.boneCount, sizeof(Transform)));
+            model.boneMatrices = static_cast<Mat4*>(std::calloc(model.skeleton.boneCount, sizeof(Mat4)));
+            for (unsigned b = 0; b < model.skeleton.boneCount; b++) {
+                model.boneMatrices[b] = mat4_identity();
+            }
+        }
+    }
+    for (int m = 0; m < model.meshCount; m++) {
+        model.meshes[m].boneCount = (int)model.skeleton.boneCount;
+        upload_mesh(model.meshes[m]);
+    }
     return model;
 }
 
-void unload_model(Model) {}
+void unload_model(Model model) {
+    for (int i = 0; i < model.meshCount; i++) {
+        unload_mesh(model.meshes[i]);
+    }
+    // Unlike raylib, the model owns the textures its materials hold when it is unloaded (the
+    // game swaps its own in and clears shared ones, e.g. Chara3D's face sheet, beforehand).
+    for (int i = 0; i < model.materialCount; i++) {
+        if (model.materials[i].maps) {
+            unload_texture(model.materials[i].maps[material_map::DIFFUSE].texture);
+            std::free(model.materials[i].maps);
+        }
+    }
+    for (void* p : {(void*)model.meshes, (void*)model.materials, (void*)model.meshMaterial, (void*)model.skeleton.bones,
+                    (void*)model.skeleton.bindPose, (void*)model.currentPose, (void*)model.boneMatrices}) {
+        std::free(p);
+    }
+}
 
-ModelAnimation* load_model_animations(const char*, int* count) {
+ModelAnimation* load_model_animations(const char* path, int* count) {
     *count = 0;
-    return nullptr;
+    GltfFile file(path);
+    const cgltf_data* data = file.data;
+    if (!data || data->skins_count == 0 || data->animations_count == 0) {
+        return nullptr;
+    }
+    const cgltf_skin& skin = data->skins[0];
+    const size_t joints = skin.joints_count;
+
+    // transforms of the plain (non-joint) nodes above each joint, which raylib bakes into its pose
+    std::vector<Mat4> ext_offset(joints, mat4_identity());
+    for (size_t k = 0; k < joints; k++) {
+        for (const cgltf_node* n = skin.joints[k]->parent; n; n = n->parent) {
+            if (std::find(skin.joints, skin.joints + joints, n) != skin.joints + joints) {
+                break;
+            }
+            const Transform t{{n->translation[0], n->translation[1], n->translation[2]},
+                              {n->rotation[0], n->rotation[1], n->rotation[2], n->rotation[3]},
+                              {n->scale[0], n->scale[1], n->scale[2]}};
+            ext_offset[k] = matrix_multiply(ext_offset[k], transform_matrix(t));
+        }
+    }
+
+    auto* anims = static_cast<ModelAnimation*>(std::calloc(data->animations_count, sizeof(ModelAnimation)));
+    struct Channels {
+        const cgltf_animation_channel *translate = nullptr, *rotate = nullptr, *scale = nullptr;
+    };
+    for (size_t a = 0; a < data->animations_count; a++) {
+        const cgltf_animation& src = data->animations[a];
+        ModelAnimation& anim = anims[a];
+        BoneInfo* bones = load_bones(skin, anim.boneCount);
+        std::vector<Channels> channels(joints);
+        float duration = 0.0f;
+        for (size_t c = 0; c < src.channels_count; c++) {
+            const cgltf_animation_channel& ch = src.channels[c];
+            const auto* it = std::find(skin.joints, skin.joints + joints, ch.target_node);
+            if (it == skin.joints + joints) {
+                continue;
+            }
+            Channels& bc = channels[it - skin.joints];
+            if (ch.target_path == cgltf_animation_path_type_translation) {
+                bc.translate = &ch;
+            } else if (ch.target_path == cgltf_animation_path_type_rotation) {
+                bc.rotate = &ch;
+            } else if (ch.target_path == cgltf_animation_path_type_scale) {
+                bc.scale = &ch;
+            }
+            float end = 0.0f;
+            if (ch.sampler->input->count > 0 &&
+                cgltf_accessor_read_float(ch.sampler->input, ch.sampler->input->count - 1, &end, 1)) {
+                duration = std::max(duration, end);
+            }
+        }
+        if (src.name) {
+            std::snprintf(anim.name, sizeof(anim.name), "%s", src.name);
+        }
+        anim.keyframeCount = (int)(duration * GLTF_FRAMERATE) + 1;
+        anim.keyframePoses = static_cast<Transform**>(std::calloc(anim.keyframeCount, sizeof(Transform*)));
+        for (int f = 0; f < anim.keyframeCount; f++) {
+            Transform* pose = anim.keyframePoses[f] = static_cast<Transform*>(std::calloc(joints, sizeof(Transform)));
+            const float time = (float)f / GLTF_FRAMERATE;
+            for (size_t k = 0; k < joints; k++) {
+                const cgltf_node* j = skin.joints[k];
+                float tr[3] = {j->translation[0], j->translation[1], j->translation[2]};
+                float rot[4] = {j->rotation[0], j->rotation[1], j->rotation[2], j->rotation[3]};
+                float sc[3] = {j->scale[0], j->scale[1], j->scale[2]};
+                sample_channel<3>(channels[k].translate, time, tr);
+                sample_channel<4>(channels[k].rotate, time, rot);
+                sample_channel<3>(channels[k].scale, time, sc);
+                const Transform local{{tr[0], tr[1], tr[2]}, {rot[0], rot[1], rot[2], rot[3]}, {sc[0], sc[1], sc[2]}};
+                pose[k] = matrix_decompose(matrix_multiply(transform_matrix(local), ext_offset[k]));
+            }
+            build_pose_from_parents(bones, (int)anim.boneCount, pose);
+        }
+        std::free(bones);
+    }
+    *count = (int)data->animations_count;
+    return anims;
 }
 
-void unload_model_animations(ModelAnimation*, int) {}
-void update_model_animation(Model, ModelAnimation, float) {}
-void draw_model(Model, Vec3, float, Color) {}
-void draw_mesh(Mesh, Material, Mat4) {}
-void update_mesh_buffer(Mesh, int, const void*, int, int) {}
-void set_material_texture(Material*, int, Texture) {}
-void begin_mode_3d(Camera3D) {
-    flush();
+void unload_model_animations(ModelAnimation* anims, int count) {
+    if (!anims) {
+        return;
+    }
+    for (int a = 0; a < count; a++) {
+        for (int f = 0; f < anims[a].keyframeCount; f++) {
+            std::free(anims[a].keyframePoses[f]);
+        }
+        std::free(anims[a].keyframePoses);
+    }
+    std::free(anims);
 }
+
+void update_model_animation(Model model, ModelAnimation anim, float frame) {
+    if (anim.keyframeCount <= 0 || !anim.keyframePoses || !model.skeleton.bones || !model.boneMatrices) {
+        return;
+    }
+    // raylib UpdateModelAnimationBones: blend two keyframes, bone matrix = inverse(bind) * pose
+    int cur = (int)frame, next = cur + 1;
+    const float blend = std::clamp(frame - (float)cur, 0.0f, 1.0f);
+    cur %= anim.keyframeCount;
+    next %= anim.keyframeCount;
+    const Transform* a = anim.keyframePoses[cur];
+    const Transform* b = anim.keyframePoses[next];
+    if (!a || !b) {
+        return;
+    }
+    for (unsigned i = 0; i < model.skeleton.boneCount && i < anim.boneCount; i++) {
+        Transform& pose = model.currentPose[i];
+        pose.translation = v3_lerp(a[i].translation, b[i].translation, blend);
+        pose.rotation = quat_slerp(a[i].rotation, b[i].rotation, blend);
+        pose.scale = v3_lerp(a[i].scale, b[i].scale, blend);
+        model.boneMatrices[i] =
+            matrix_multiply(matrix_invert(transform_matrix(model.skeleton.bindPose[i])), transform_matrix(pose));
+    }
+    skin_meshes(model);
+}
+
+void update_mesh_buffer(Mesh mesh, int index, const void* data, int data_size, int offset) {
+    MeshSlot* slot = mesh_slot(mesh.vaoId);
+    if (!slot || !data) {
+        return;
+    }
+    const int comps = index == MESH_BUFFER_TEXCOORD ? 2 : 3;
+    auto field = [&](MeshVertex& v) {
+        return index == MESH_BUFFER_POSITION ? &v.x : index == MESH_BUFFER_NORMAL ? &v.nx : &v.u;
+    };
+    if (index != MESH_BUFFER_POSITION && index != MESH_BUFFER_NORMAL && index != MESH_BUFFER_TEXCOORD) {
+        spdlog::warn("bgfx: update_mesh_buffer index {} not supported", index); // ponytail: colours never change
+        return;
+    }
+    const int stride = comps * (int)sizeof(float);
+    const int first = offset / stride;
+    const int n = std::min(data_size / stride, (int)slot->cpu.size() - first);
+    const auto* src = static_cast<const float*>(data);
+    for (int i = 0; i < n; i++) {
+        std::memcpy(field(slot->cpu[first + i]), src + i * comps, stride);
+    }
+    if (n > 0) {
+        bgfx::update(slot->vb, (uint32_t)first,
+                     bgfx::copy(slot->cpu.data() + first, (uint32_t)(n * sizeof(MeshVertex))));
+    }
+}
+
+void set_material_texture(Material* material, int map_type, Texture texture) {
+    material->maps[map_type].texture = texture;
+}
+
+void draw_mesh(Mesh mesh, Material material, Mat4 transform) {
+    submit_mesh(mesh, material, transform, Color::WHITE);
+}
+
+void draw_model(Model model, Vec3 pos, float scale, Color tint) {
+    // raylib DrawModelEx without rotation: model.transform, then scale, then translation
+    const Mat4 transform = matrix_multiply(
+        model.transform, matrix_multiply(matrix_scale(scale, scale, scale), matrix_translate(pos.x, pos.y, pos.z)));
+    for (int i = 0; i < model.meshCount; i++) {
+        submit_mesh(model.meshes[i], model.materials[model.meshMaterial[i]], transform, tint);
+    }
+}
+
+void begin_mode_3d(Camera3D camera) {
+    open_pass(pass.target); // a view of its own for the camera's transforms
+    in_3d = true;
+    // raylib BeginMode3D: right-handed, near/far 0.05/4000, aspect of the current target
+    constexpr float near = 0.05f, far = 4000.0f;
+    const float aspect = (float)pass.width / (float)std::max(pass.height, 1);
+    float view[16], proj[16];
+    bx::mtxLookAt(view, {camera.position.x, camera.position.y, camera.position.z},
+                  {camera.target.x, camera.target.y, camera.target.z}, {camera.up.x, camera.up.y, camera.up.z},
+                  bx::Handedness::Right);
+    if (camera.projection == camera_projection::ORTHOGRAPHIC) {
+        const float top = camera.fovy / 2.0f, right = top * aspect;
+        bx::mtxOrtho(proj, -right, right, -top, top, near, far, 0.0f, caps->homogeneousDepth, bx::Handedness::Right);
+    } else {
+        bx::mtxProj(proj, camera.fovy, aspect, near, far, caps->homogeneousDepth, bx::Handedness::Right);
+    }
+    if (pass.flip) { // render targets are stored bottom-up, as in GL
+        for (int i : {1, 5, 9, 13}) {
+            proj[i] = -proj[i];
+        }
+    }
+    bgfx::setViewTransform(pass.view, view, proj);
+}
+
 void end_mode_3d() {
-    flush();
+    in_3d = false;
+    open_pass(pass.target);
 }
-void set_backface_culling(bool) {}
-void set_cull_face(int) {}
+
+void set_backface_culling(bool enabled) {
+    backface_culling = enabled;
+}
+
+void set_cull_face(int face) {
+    cull_front = face == cull_face::FRONT;
+}
+
+namespace {
+
+    void init_3d() {
+        mesh_layout.begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+            .end();
+        mesh_program = make_program(vs_mesh_spv, sizeof(vs_mesh_spv), fs_mesh_spv, sizeof(fs_mesh_spv));
+        u_col_diffuse = bgfx::createUniform("colDiffuse", bgfx::UniformType::Vec4);
+    }
+
+    void shutdown_3d() {
+        for (auto& m : mesh_slots) {
+            if (bgfx::isValid(m.vb)) {
+                bgfx::destroy(m.vb);
+            }
+            if (bgfx::isValid(m.ib)) {
+                bgfx::destroy(m.ib);
+            }
+        }
+        mesh_slots.clear();
+        bgfx::destroy(mesh_program.program);
+        bgfx::destroy(u_col_diffuse);
+    }
+
+} // namespace
