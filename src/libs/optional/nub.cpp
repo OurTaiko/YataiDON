@@ -118,14 +118,14 @@ namespace gen3 {
             case AV_SAMPLE_FMT_DBLP:
                 for (int s = 0; s < frame->nb_samples; s++) {
                     for (int c = 0; c < channels; c++) {
-                        out.push_back((float)reinterpret_cast<const double*>(frame->data[c])[s]);
+                        out.push_back(reinterpret_cast<const double*>(frame->data[c])[s]);
                     }
                 }
                 return true;
             case AV_SAMPLE_FMT_DBL: {
                 const double* p = reinterpret_cast<const double*>(frame->data[0]);
                 for (int i = 0; i < frame->nb_samples * channels; i++) {
-                    out.push_back((float)p[i]);
+                    out.push_back(p[i]);
                 }
                 return true;
             }
@@ -194,7 +194,7 @@ namespace gen3 {
         MemReader reader{file.data() + riff, file.size() - riff};
 
         // The buffer avio reads through; freed via the context below.
-        unsigned char* avio_buf = (unsigned char*)av_malloc(0x4000);
+        auto* avio_buf = static_cast<unsigned char*>(av_malloc(0x4000));
         AVIOContext* avio = avio_alloc_context(avio_buf, 0x4000, 0, &reader, mem_read, nullptr, mem_seek);
         AVFormatContext* fmt = avformat_alloc_context();
         if (!avio_buf || !avio || !fmt) {

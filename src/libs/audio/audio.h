@@ -1,0 +1,229 @@
+#pragma once
+
+#include "../file/config.h"
+#include "../gfx/sdl_compat.h"
+#include "../video/av.h"
+#ifdef YATAIDON_PLATFORM_PS5
+#include "../../platform/platform_ps5.h"
+#endif
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#include <RtAudio.h>
+#endif
+#ifdef _WIN32
+#include <portaudio.h>
+#endif
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <samplerate.h>
+#include <shared_mutex>
+#include <sndfile.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+namespace song_loudness {
+    class Scanner;
+}
+
+enum class VolumePreset {
+    NONE,
+    SOUND,
+    MUSIC,
+    VOICE,
+    HITSOUND,
+    ATTRACT_MODE,
+};
+
+struct VirtualFile {
+    std::shared_ptr<const std::vector<uint8_t>> data;
+    sf_count_t pos = 0;
+};
+
+struct sound {
+#ifdef YATAIDON_PLATFORM_PS5
+    std::shared_ptr<float[]> cached_data;
+#endif
+    float* data = nullptr;        // Audio sample data (interleaved stereo or mono)
+    unsigned int frame_count = 0; // Total number of frames in the sound
+    unsigned int sample_rate = 0; // Original sample rate of the audio
+    unsigned int channels = 0;    // Number of channels (1 = mono, 2 = stereo)
+
+    bool is_playing = false;        // Whether the sound is currently playing
+    unsigned int current_frame = 0; // Current playback position in frames
+    float frame_frac = 0.0f;        // Fractional part of playback position (for pitch != 1.0)
+    bool loop = false;              // Whether to loop the sound
+
+    float normalization_gain = 1.0f;
+    float volume = 1.0f; // Volume multiplier (0.0 to 1.0+)
+    float playback_gain = 1.0f;
+    float pan = 0.5f;   // Stereo pan (0.0 = left, 0.5 = center, 1.0 = right)
+    float pitch = 1.0f; // Pitch/speed multiplier (1.0 = normal)
+
+    SRC_STATE* resampler = nullptr;   // libsamplerate state (if needed)
+    float* resample_buffer = nullptr; // Buffer for resampled audio
+};
+
+struct music {
+    SNDFILE* file_handle = nullptr; // libsndfile file handle for streaming
+    SF_INFO file_info{};            // Audio file information
+
+    float* stream_buffer = nullptr;    // Buffer for reading from file
+    unsigned int buffer_size = 0;      // Size of stream buffer in frames
+    unsigned int buffer_position = 0;  // Current position in stream buffer
+    unsigned int frames_in_buffer = 0; // Number of valid frames currently in buffer
+
+    bool is_playing = false;              // Whether the music is currently playing
+    unsigned long long current_frame = 0; // Current playback position in frames
+    bool loop = false;                    // Whether to loop the music
+
+    float normalization_gain = 1.0f;
+    float volume = 1.0f; // Volume multiplier (0.0 to 1.0+)
+    float pan = 0.5f;    // Stereo pan (0.0 = left, 0.5 = center, 1.0 = right)
+    float pitch = 1.0f;  // Pitch/speed multiplier (1.0 = normal)
+
+    SRC_STATE* resampler = nullptr;   // libsamplerate state (if needed)
+    float* resample_buffer = nullptr; // Buffer for resampled audio
+
+    std::string file_path; // Path to the audio file
+    std::shared_ptr<std::vector<uint8_t>> memory_buffer;
+    VirtualFile vio_cursor;
+
+    float* pcm_data = nullptr; // Android FFmpeg fallback: fully decoded PCM
+    sf_count_t pcm_total_frames = 0;
+};
+
+// Enumerates output device names for the given backend (device_type).
+// Returns an empty list on platforms without device enumeration support.
+std::vector<std::string> enumerate_audio_devices(int device_type);
+
+class AudioEngine {
+public:
+    fs::path sounds_path;
+
+    AudioEngine();
+    ~AudioEngine();
+
+    bool init_audio_device(const fs::path& sounds_path, const AudioConfig& audio_config,
+                           const VolumeConfig& volume_presets);
+    void close_audio_device();
+    bool is_audio_device_ready() const;
+    void set_master_volume(float volume);
+    float get_master_volume();
+
+    void queue_song_loudness(const fs::path& file_path, bool priority = false);
+
+    void load_screen_sounds(const std::string& screen_name);
+
+    std::string load_sound(const fs::path& file_path, const std::string& name);
+    void unload_sound(const std::string& name);
+    void unload_all_sounds();
+    void store_sound(const std::string& name, const sound& snd);
+    void play_sound(const std::string& name, VolumePreset volume_preset = VolumePreset::NONE, float gain = 1.0f);
+    bool has_sound(const std::string& name);
+    void stop_sound(const std::string& name);
+    void set_sound_loop(const std::string& name, bool loop);
+    bool is_sound_playing(const std::string& name);
+    // times play_sound(name) has been called (a skin can count hits even while the sound
+    // is still playing from the previous one)
+    uint64_t sound_play_count(const std::string& name);
+    void set_sound_volume(const std::string& name, float volume);
+    void set_sound_pan(const std::string& name, float pan);
+    void set_sound_pitch(const std::string& name, float pitch);
+    float get_sound_time_played(const std::string& name) const;
+    float get_sound_time_length(const std::string& name) const;
+    void seek_sound(const std::string& name, float position);
+
+    struct PreparedPCM {
+        std::unique_ptr<float[]> data; // interleaved, at the device rate
+        unsigned int frames = 0;
+        unsigned int rate = 0;
+        int channels = 0;
+        int preview_ms = 0; // the bank's own preview point
+        std::string source_path;
+    };
+    bool prepare_nus3bank_pcm(const fs::path& file_path, PreparedPCM& out, bool quick_resample = false);
+#ifdef YATAIDON_PLATFORM_PS5
+    bool prepare_music_pcm(const fs::path& file_path, PreparedPCM& out, const std::atomic<bool>& cancelled);
+#endif
+    std::string load_music_stream_prepared(PreparedPCM&& pcm, const std::string& name);
+
+    std::string load_music_stream(const fs::path& file_path, const std::string& name);
+#ifndef __EMSCRIPTEN__
+    std::string load_music_stream_memory(const av::AVAudioStream& audio_stream, const std::string& name);
+#endif
+    void play_music_stream(const std::string& name, VolumePreset volume_preset = VolumePreset::NONE);
+    float get_music_time_length(const std::string& name) const;
+    float get_music_time_played(const std::string& name) const;
+    void set_music_volume(const std::string& name, float volume);
+    bool is_music_stream_valid(const std::string& name) const;
+    bool is_music_stream_playing(const std::string& name) const;
+    void stop_music_stream(const std::string& name);
+    void unload_music_stream(const std::string& name);
+    void unload_all_music();
+#ifdef YATAIDON_PLATFORM_IOS
+    void suspend_ios_audio(bool suspended);
+#endif
+    void seek_music_stream(const std::string& name, float position);
+
+private:
+    std::unique_ptr<song_loudness::Scanner> loudness_scanner;
+
+    double target_sample_rate;
+    unsigned long buffer_size;
+    std::string device_name; // Output device to open (empty = system default)
+    std::vector<int> channel_offsets{0};
+    unsigned int rt_total_channels = 2;
+    VolumeConfig volume_presets;
+    bool is_ready;
+    mutable std::shared_mutex rw_lock;
+    std::mutex play_count_lock;
+    std::unordered_map<std::string, uint64_t> play_counts;
+    std::atomic<float> master_volume;
+
+    SDL_AudioStream* sdl_stream = nullptr;
+#ifdef YATAIDON_PLATFORM_PS5
+    PS5AudioDevice* ps5_audio = nullptr;
+#endif
+    bool sdl_audio_subsystem_initialized = false;
+    std::vector<float> sdl_scratch_buffer;
+
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5) && !defined(YATAIDON_PLATFORM_PS5)
+    RtAudio* rt_audio = nullptr; // ALSA/JACK/PulseAudio/OSS/CoreAudio/DirectSound/ASIO/WASAPI
+#endif
+#ifdef _WIN32
+    PaStream* pa_stream = nullptr; // WDM-KS/MME
+#endif
+
+    std::unordered_map<std::string, sound> sounds;
+    std::unordered_map<std::string, music> music_streams;
+
+    std::string path_to_string(const fs::path& path) const;
+    float loaded_sound_gain(const fs::path& file_path, const std::string& name);
+    float loaded_song_gain(const fs::path& file_path);
+
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5) && !defined(YATAIDON_PLATFORM_PS5)
+    bool init_rtaudio_device(RtAudio::Api api, const char* label);
+#endif
+#ifdef _WIN32
+    bool init_portaudio_device(PaHostApiTypeId api, const char* label);
+#endif
+    bool init_sdl3_device();
+
+    static void mix(float* out, unsigned int framesPerBuffer, AudioEngine* engine);
+    static void sdl_audio_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount);
+#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5) && !defined(YATAIDON_PLATFORM_PS5)
+    static int rt_audio_callback(void* outputBuffer, void* inputBuffer, unsigned int framesPerBuffer, double streamTime,
+                                 unsigned int status, void* userData);
+#endif
+#ifdef _WIN32
+    static int pa_stream_callback(const void* inputBuffer, void* outputBuffer, unsigned long framesPerBuffer,
+                                  const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags,
+                                  void* userData);
+#endif
+};
+
+extern AudioEngine audio;

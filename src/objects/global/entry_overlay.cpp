@@ -1,6 +1,6 @@
 #include "entry_overlay.h"
 
-#include "../../libs/network.h"
+#include "../../libs/network/network.h"
 
 EntryOverlay::EntryOverlay() {
     if (!load("EntryOverlay", "entry_overlay", network.is_online())) {

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../libs/animation.h"
-#include "../../libs/ray.h"
-#include "../../libs/texture.h"
+#include "../../libs/gfx.h"
+#include "../../libs/gfx/texture.h"
+#include "../../libs/math/animation.h"
 
 class SongSelectScript;
 

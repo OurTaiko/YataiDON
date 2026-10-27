@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // Counting, animations and drawing live in game/kusudama_counter.lua.
 class KusudamaCounter : public LuaScript {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // Keeps the judgment counts; the skin's JudgeCounter (game/judge_counter.lua) draws them.
 class JudgeCounter : public LuaScript {

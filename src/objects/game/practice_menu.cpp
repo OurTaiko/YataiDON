@@ -132,14 +132,14 @@ const char* PracticeMenu::dialog_name() const {
 }
 
 // Handle mouse/touch input for menu navigation and selection
-PracticeMenu::Action PracticeMenu::handle_mouse_input(const ray::Camera2D& camera, ray::Vector2 mouse_pos, bool clicked,
+PracticeMenu::Action PracticeMenu::handle_mouse_input(const Camera2D& camera, Vec2 mouse_pos, bool clicked,
                                                       bool auto_on) {
     if (!open) {
         return Action::NONE;
     }
 
     // Convert mouse position from screen coordinates to virtual coordinates
-    ray::Vector2 virtual_mouse = ray::GetScreenToWorld2D(mouse_pos, camera);
+    Vec2 virtual_mouse = get_screen_to_world_2d(mouse_pos, camera);
 
     const char* name = dialog_name();
     sol::optional<std::string> dlg = name ? sol::optional<std::string>(name) : sol::nullopt;

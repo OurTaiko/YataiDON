@@ -32,13 +32,12 @@ void Fireworks::draw() {
             t && std::isfinite(t->x) && t->x > 0) {
             static constexpr int ANGLE[6] = {2, 1, 0, 0, -1, -2};
             for (int i = 0; i < 6; i++) {
-                float w = (float)t_explosion->x2[i], h = (float)t_explosion->y2[i];
-                tex.draw_texture(t_explosion, {.frame = (int)explosion_anim->attribute,
+                float w = t_explosion->x2[i], h = t_explosion->y2[i];
+                tex.draw_texture(t_explosion, {.frame = static_cast<int>(explosion_anim->attribute),
                                                .mirror = i >= 4 ? Mirror::HORIZONTAL : Mirror::NONE,
                                                .origin = {w / 2, h / 2},
                                                .rotation = ANGLE[i] * t->x,
-                                               .index = i,
-                                               .blend = ray::BLEND_ADDITIVE});
+                                               .index = i});
             }
             return;
         }
@@ -54,7 +53,7 @@ void Fireworks::draw() {
         }
         for (int i = 0; i < slots; i++) {
             tex.draw_texture(t_explosion,
-                             {.frame = (int)explosion_anim->attribute,
+                             {.frame = static_cast<int>(explosion_anim->attribute),
                               .mirror = (mirror_from >= 0 && i >= mirror_from) ? Mirror::HORIZONTAL : Mirror::NONE,
                               .index = i});
         }

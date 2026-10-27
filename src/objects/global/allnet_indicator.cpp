@@ -1,6 +1,6 @@
 #include "allnet_indicator.h"
 
-#include "../../libs/network.h"
+#include "../../libs/network/network.h"
 
 AllNetIcon::AllNetIcon() {
     if (!load("AllNetIcon", "allnet_indicator", network.is_online())) {

@@ -1,13 +1,14 @@
 #include "box_base.h"
 
 #include <string_view>
+#include <utility>
 
-#include "../../../libs/text.h"
+#include "../../../libs/gfx/text.h"
 #include "color_utils.h"
 #include "../../../libs/color_shader.h"
 
-BaseBox::BaseBox(const fs::path& path, const BoxDef& box_def)
-    : path(path), texture_index(box_def.texture_index), genre_index(box_def.genre_index),
+BaseBox::BaseBox(fs::path path, const BoxDef& box_def)
+    : path(std::move(path)), texture_index(box_def.texture_index), genre_index(box_def.genre_index),
       genre_label(box_def.genre_label), collection(box_def.collection), explanation(box_def.explanation) {
     BoxColors colors = resolve_box_colors(box_def.box_color, box_def.back_color, box_def.fore_color);
     this->back_color = colors.box;
@@ -29,28 +30,27 @@ BaseBox::BaseBox(const fs::path& path, const BoxDef& box_def)
     fade_in(100);
 }
 
-BaseBox::~BaseBox() {
-}
+BaseBox::~BaseBox() = default;
 
 void BaseBox::preregister_text() {
     float font_size = tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
     if (utf8_char_count(text_name) >= 30) {
-        font_size -= (int)(10 * tex.screen_scale);
+        font_size -= static_cast<int>(10 * tex.screen_scale);
     }
-    font_manager.register_text(text_name, (int)font_size);
+    font_manager.register_text(text_name, static_cast<int>(font_size));
 }
 
 void BaseBox::load_text() {
     float font_size = tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
     if (utf8_char_count(text_name) >= 30) {
-        font_size -= (int)(10 * tex.screen_scale);
+        font_size -= static_cast<int>(10 * tex.screen_scale);
     }
     name = make_unique<OutlinedText>(text_name, font_size, text_color, fore_color, true);
 
     if (back_color.has_value()) {
         shader_owner = load_color_shader(back_color.value());
         shader = *shader_owner;
-        shader_loaded = ray::IsShaderValid(shader);
+        shader_loaded = is_shader_valid(shader);
     }
 
     text_loaded = true;
@@ -124,7 +124,7 @@ void BaseBox::update(double current_time) {
     if (!move->is_finished) {
         position += move->attribute - prev_position;
         if (move_delta != 0.0f && cross_lead != 0.0f) {
-            float p = (float)(move->attribute / move_delta);
+            float p = move->attribute / move_delta;
             if (p < 0.0f) {
                 p = 0.0f;
             } else if (p > 1.0f) {
@@ -144,7 +144,7 @@ void BaseBox::update(double current_time) {
     if (yellow_box_active) {
         // The Lua skin advances the shared yellow-box animations; read their current
         // attributes to derive the box bounds the navigator uses for the inline-list bg.
-        auto yb = [](int id) { return (MoveAnimation*)tex.get_animation(id); };
+        auto yb = [](int id) { return dynamic_cast<MoveAnimation*>(tex.get_animation(id)); };
         if (is_diff_select) {
             left_bound = position + (yb(13)->attribute - yb(13)->start_position);
             right_bound = yb(14)->attribute - yb(14)->start_position;

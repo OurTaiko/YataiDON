@@ -2,8 +2,8 @@
 
 #include <filesystem>
 
-#include "../libs/input.h"
-#include "../libs/network.h"
+#include "../libs/input/input.h"
+#include "../libs/network/network.h"
 #include "../objects/global/practice_timer.h"
 
 void SongSelectScreen::on_screen_start() {
@@ -52,13 +52,14 @@ void SongSelectScreen::on_screen_start() {
 
 void SongSelectScreen::select_song(SongBox* song) {
     navigator.add_to_recent(song);
-    SessionData& session_data = global_data.session_data[(int)global_data.player_num];
+    const auto player_index = static_cast<int>(global_data.player_num);
+    SessionData& session_data = global_data.session_data[player_index];
     session_data.selected_song = song->path;
-    session_data.selected_difficulty = (int)player->selected_difficulty;
+    session_data.selected_difficulty = static_cast<int>(player->selected_difficulty);
     session_data.song_hash = song->hash_for(session_data.selected_difficulty);
-    session_data.genre_index = (int)song->song_genre_index - 1;
+    session_data.genre_index = static_cast<int>(song->song_genre_index) - 1;
     session_data.genre_label = song->song_genre_label;
-    global_data.last_difficulty[(int)global_data.player_num] = session_data.selected_difficulty;
+    global_data.last_difficulty[player_index] = session_data.selected_difficulty;
     game_transition.emplace(song->text_name, song->text_subtitle, false);
     if (exists(session_data.selected_song.parent_path() / "Loading.png")) {
         game_transition->add_loading_graphic((session_data.selected_song.parent_path() / "Loading.png").string());
@@ -170,7 +171,7 @@ std::optional<Screens> SongSelectScreen::start_replay(const ReplayData& replay) 
         return std::nullopt;
     }
 
-    SessionData& session_data = global_data.session_data[(int)global_data.player_num];
+    SessionData& session_data = global_data.session_data[static_cast<int>(global_data.player_num)];
     session_data.selected_song = *song_path;
     session_data.selected_difficulty = replay.difficulty;
     session_data.song_hash = replay.hash;
@@ -197,7 +198,7 @@ std::optional<Screens> SongSelectScreen::poll_second_player_join(double current_
         join_request_ms = -1.0;
         global_data.entry_join_pending = true;
         global_data.entry_joined_seat = join_existing_seat;
-        spdlog::info("[2P join] returning to ENTRY, {}P stays in", (int)join_existing_seat);
+        spdlog::info("[2P join] returning to ENTRY, {}P stays in", static_cast<int>(join_existing_seat));
         return on_screen_end(Screens::ENTRY);
     }
 
@@ -237,7 +238,8 @@ std::optional<Screens> SongSelectScreen::poll_second_player_join(double current_
     join_existing_seat = in;
     audio.play_sound("don", VolumePreset::SOUND);          // CheckEntry: don_l / don_r
     audio.play_sound("entry_2p_add", VolumePreset::SOUND); // SecondPlayerJoinToEntry
-    spdlog::info("[2P join] {}P asked to join from song select; {}P holds", (int)out, (int)in);
+    spdlog::info("[2P join] {}P asked to join from song select; {}P holds", static_cast<int>(out),
+                 static_cast<int>(in));
     return std::nullopt;
 }
 
@@ -303,7 +305,7 @@ void SongSelectScreen::start_search() {
     search_box.emplace();
     // The don key that opened the search (F/J) is also a typed character still
     // queued in raylib's char buffer; drop it so it does not land in the query.
-    while (ray::GetCharPressed() > 0) {
+    while (char_pressed() > 0) {
     }
 }
 
@@ -403,7 +405,7 @@ Screens SongSelectScreen::on_screen_end(Screens next_screen) {
         stats_future.wait();
     }
     navigator.join_loader();
-    ray::UnloadShader(shader);
+    unload_shader(shader);
     return Screen::on_screen_end(next_screen);
 }
 
@@ -464,7 +466,7 @@ void SongSelectScreen::draw() {
         coin_overlay.draw();
         global_data.in_transition = false;
     }
-    script->draw_top(dan_transition.has_value() ? (float)dan_transition->progress() : -1.0f);
+    script->draw_top(dan_transition.has_value() ? dan_transition->progress() : -1.0f);
 
     if (dan_transition.has_value()) {
         dan_transition->draw();

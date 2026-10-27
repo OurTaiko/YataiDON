@@ -2,8 +2,8 @@
 
 #include <variant>
 
+#include "../../libs/file/scores.h"
 #include "../../libs/global_data.h"
-#include "../../libs/scores.h"
 
 struct ConfigRef {
     std::variant<bool*, int*, float*, std::string*, std::vector<int>*, fs::path*> ptr;

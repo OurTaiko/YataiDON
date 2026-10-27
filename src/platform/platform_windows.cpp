@@ -10,6 +10,8 @@
 // clang-format off
 #include <windows.h>
 #include <dbghelp.h> // must follow windows.h
+
+#include "../libs/gfx/sdl_compat.h"
 // clang-format on
 
 namespace {
@@ -216,7 +218,7 @@ void win32_install_crash_handlers() {
     SetUnhandledExceptionFilter(crash_exception_filter);
 }
 
-bool win32_is_key_down_native(int raylib_key) {
+bool win32_is_key_down_native(int scancode) {
     DWORD fg_pid = 0;
     GetWindowThreadProcessId(GetForegroundWindow(), &fg_pid);
     if (fg_pid != GetCurrentProcessId()) {
@@ -225,230 +227,162 @@ bool win32_is_key_down_native(int raylib_key) {
 
     int vk_code = 0;
 
-    // Handle letters (A-Z)
-    if (raylib_key >= 65 && raylib_key <= 90) {
-        vk_code = raylib_key;
-    }
-    // Handle numbers (0-9)
-    else if (raylib_key >= 48 && raylib_key <= 57) {
-        vk_code = raylib_key;
-    }
-    // Handle special keys
-    else {
-        switch (raylib_key) {
-        case 32:
+    if (scancode >= SDL_SCANCODE_A && scancode <= SDL_SCANCODE_Z) {
+        vk_code = 'A' + (scancode - SDL_SCANCODE_A);
+    } else if (scancode >= SDL_SCANCODE_1 && scancode <= SDL_SCANCODE_9) {
+        vk_code = '1' + (scancode - SDL_SCANCODE_1);
+    } else if (scancode == SDL_SCANCODE_0) {
+        vk_code = '0';
+    } else if (scancode >= SDL_SCANCODE_F1 && scancode <= SDL_SCANCODE_F12) {
+        vk_code = VK_F1 + (scancode - SDL_SCANCODE_F1);
+    } else if (scancode >= SDL_SCANCODE_KP_1 && scancode <= SDL_SCANCODE_KP_9) {
+        vk_code = VK_NUMPAD1 + (scancode - SDL_SCANCODE_KP_1);
+    } else {
+        switch (scancode) {
+        case SDL_SCANCODE_SPACE:
             vk_code = VK_SPACE;
             break;
-        case 256:
+        case SDL_SCANCODE_ESCAPE:
             vk_code = VK_ESCAPE;
             break;
-        case 257:
+        case SDL_SCANCODE_RETURN:
             vk_code = VK_RETURN;
             break;
-        case 258:
+        case SDL_SCANCODE_TAB:
             vk_code = VK_TAB;
             break;
-        case 259:
+        case SDL_SCANCODE_BACKSPACE:
             vk_code = VK_BACK;
             break;
-        case 260:
+        case SDL_SCANCODE_INSERT:
             vk_code = VK_INSERT;
             break;
-        case 261:
+        case SDL_SCANCODE_DELETE:
             vk_code = VK_DELETE;
             break;
-        case 262:
+        case SDL_SCANCODE_RIGHT:
             vk_code = VK_RIGHT;
             break;
-        case 263:
+        case SDL_SCANCODE_LEFT:
             vk_code = VK_LEFT;
             break;
-        case 264:
+        case SDL_SCANCODE_DOWN:
             vk_code = VK_DOWN;
             break;
-        case 265:
+        case SDL_SCANCODE_UP:
             vk_code = VK_UP;
             break;
-        case 266:
+        case SDL_SCANCODE_PAGEUP:
             vk_code = VK_PRIOR;
-            break; // Page Up
-        case 267:
+            break;
+        case SDL_SCANCODE_PAGEDOWN:
             vk_code = VK_NEXT;
-            break; // Page Down
-        case 268:
+            break;
+        case SDL_SCANCODE_HOME:
             vk_code = VK_HOME;
             break;
-        case 269:
+        case SDL_SCANCODE_END:
             vk_code = VK_END;
             break;
-        case 280:
+        case SDL_SCANCODE_CAPSLOCK:
             vk_code = VK_CAPITAL;
             break;
-        case 281:
+        case SDL_SCANCODE_SCROLLLOCK:
             vk_code = VK_SCROLL;
             break;
-        case 282:
+        case SDL_SCANCODE_NUMLOCKCLEAR:
             vk_code = VK_NUMLOCK;
             break;
-        case 283:
+        case SDL_SCANCODE_PRINTSCREEN:
             vk_code = VK_SNAPSHOT;
-            break; // Print Screen
-        case 284:
+            break;
+        case SDL_SCANCODE_PAUSE:
             vk_code = VK_PAUSE;
             break;
-        case 290:
-            vk_code = VK_F1;
-            break;
-        case 291:
-            vk_code = VK_F2;
-            break;
-        case 292:
-            vk_code = VK_F3;
-            break;
-        case 293:
-            vk_code = VK_F4;
-            break;
-        case 294:
-            vk_code = VK_F5;
-            break;
-        case 295:
-            vk_code = VK_F6;
-            break;
-        case 296:
-            vk_code = VK_F7;
-            break;
-        case 297:
-            vk_code = VK_F8;
-            break;
-        case 298:
-            vk_code = VK_F9;
-            break;
-        case 299:
-            vk_code = VK_F10;
-            break;
-        case 300:
-            vk_code = VK_F11;
-            break;
-        case 301:
-            vk_code = VK_F12;
-            break;
-        case 340:
+        case SDL_SCANCODE_LSHIFT:
             vk_code = VK_LSHIFT;
             break;
-        case 341:
+        case SDL_SCANCODE_LCTRL:
             vk_code = VK_LCONTROL;
             break;
-        case 342:
+        case SDL_SCANCODE_LALT:
             vk_code = VK_LMENU;
-            break; // Left Alt
-        case 343:
+            break;
+        case SDL_SCANCODE_LGUI:
             vk_code = VK_LWIN;
             break;
-        case 344:
+        case SDL_SCANCODE_RSHIFT:
             vk_code = VK_RSHIFT;
             break;
-        case 345:
+        case SDL_SCANCODE_RCTRL:
             vk_code = VK_RCONTROL;
             break;
-        case 346:
+        case SDL_SCANCODE_RALT:
             vk_code = VK_RMENU;
-            break; // Right Alt
-        case 347:
+            break;
+        case SDL_SCANCODE_RGUI:
             vk_code = VK_RWIN;
             break;
-        case 348:
+        case SDL_SCANCODE_APPLICATION:
             vk_code = VK_APPS;
-            break; // KB menu
-        // Punctuation
-        case 39:
+            break;
+        case SDL_SCANCODE_APOSTROPHE:
             vk_code = VK_OEM_7;
-            break; // '
-        case 44:
+            break;
+        case SDL_SCANCODE_COMMA:
             vk_code = VK_OEM_COMMA;
             break;
-        case 45:
+        case SDL_SCANCODE_MINUS:
             vk_code = VK_OEM_MINUS;
             break;
-        case 46:
+        case SDL_SCANCODE_PERIOD:
             vk_code = VK_OEM_PERIOD;
             break;
-        case 47:
+        case SDL_SCANCODE_SLASH:
             vk_code = VK_OEM_2;
-            break; // /
-        case 59:
+            break;
+        case SDL_SCANCODE_SEMICOLON:
             vk_code = VK_OEM_1;
-            break; // ;
-        case 61:
+            break;
+        case SDL_SCANCODE_EQUALS:
             vk_code = VK_OEM_PLUS;
-            break; // =
-        case 91:
+            break;
+        case SDL_SCANCODE_LEFTBRACKET:
             vk_code = VK_OEM_4;
-            break; // [
-        case 92:
+            break;
+        case SDL_SCANCODE_BACKSLASH:
             vk_code = VK_OEM_5;
-            break; // backslash
-        case 93:
+            break;
+        case SDL_SCANCODE_RIGHTBRACKET:
             vk_code = VK_OEM_6;
-            break; // ]
-        case 96:
+            break;
+        case SDL_SCANCODE_GRAVE:
             vk_code = VK_OEM_3;
-            break; // `
-        // Numpad
-        case 320:
+            break;
+        case SDL_SCANCODE_KP_0:
             vk_code = VK_NUMPAD0;
             break;
-        case 321:
-            vk_code = VK_NUMPAD1;
-            break;
-        case 322:
-            vk_code = VK_NUMPAD2;
-            break;
-        case 323:
-            vk_code = VK_NUMPAD3;
-            break;
-        case 324:
-            vk_code = VK_NUMPAD4;
-            break;
-        case 325:
-            vk_code = VK_NUMPAD5;
-            break;
-        case 326:
-            vk_code = VK_NUMPAD6;
-            break;
-        case 327:
-            vk_code = VK_NUMPAD7;
-            break;
-        case 328:
-            vk_code = VK_NUMPAD8;
-            break;
-        case 329:
-            vk_code = VK_NUMPAD9;
-            break;
-        case 330:
+        case SDL_SCANCODE_KP_PERIOD:
             vk_code = VK_DECIMAL;
             break;
-        case 331:
+        case SDL_SCANCODE_KP_DIVIDE:
             vk_code = VK_DIVIDE;
             break;
-        case 332:
+        case SDL_SCANCODE_KP_MULTIPLY:
             vk_code = VK_MULTIPLY;
             break;
-        case 333:
+        case SDL_SCANCODE_KP_MINUS:
             vk_code = VK_SUBTRACT;
             break;
-        case 334:
+        case SDL_SCANCODE_KP_PLUS:
             vk_code = VK_ADD;
             break;
-        case 335:
+        case SDL_SCANCODE_KP_ENTER:
             vk_code = VK_RETURN;
-            break; // numpad enter (Windows has no separate VK)
+            break; // Windows has no separate VK
         default:
             return false;
         }
-    }
-
-    if (vk_code == 0) {
-        return false;
     }
 
     return (GetAsyncKeyState(vk_code) & 0x8000) != 0;

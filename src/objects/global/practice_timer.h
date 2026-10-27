@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // Practice-mode session countdown (Lumen tokkun_timer). The clock lives here, the skin only draws it.
 // One instance spans practice select and practice game (global_data.practice_timer).

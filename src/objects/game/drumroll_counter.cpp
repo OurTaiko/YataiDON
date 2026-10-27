@@ -50,8 +50,8 @@ void DrumrollCounter::draw(float y) {
         }
         tex.draw_texture(t_counter, {.frame = digit - '0',
                                      .x = -(total_width / 2.0f) + (i * margin),
-                                     .y = y - (float)stretch->attribute,
-                                     .y2 = (float)stretch->attribute,
+                                     .y = y - static_cast<float>(stretch->attribute),
+                                     .y2 = static_cast<float>(stretch->attribute),
                                      .fade = fade->attribute});
     }
 }

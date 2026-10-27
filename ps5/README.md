@@ -1,26 +1,39 @@
-# YataiDON PS5 / prospero
+# YataiDON for PS5 / prospero
 
-The PS5 port lives on the `prospero` branch. Desktop/mobile backends remain in
-place; the PS5 build selects its platform code with `YATAIDON_PLATFORM_PS5`.
+Experimental native folder app `PPSA99329`. This branch follows upstream's
+backend-neutral graphics API and uses **bgfx + Vulkan** on PS5. Desktop/mobile
+configuration remains on upstream's normal path.
 
-## Current behavior
+## Status
 
-- Native folder app `PPSA99329`, launched through ShadowMount+.
-- raylib / SDL2 / PS5 OpenGL 1.0.2, with a native 3840x2160 drawable.
-- Don's 3D model uses 100% of that output pixel density.
-- VSync is mandatory. Settings offers 60/120 buttons that select both frame
-  pacing and output Hz; unsupported 120 Hz requests fall back to 60 Hz.
-- Native 48 kHz stereo AudioOut with the game's mixer.
-- Native filesystem wrappers, texture/audio/skin-JSON caches, and cancellable
-  asynchronous song previews.
-- Hardware H.264 Baseline/Main/High 8-bit 4:2:0 decoding through `sceVideodec2`.
-  Other formats and decoder failures use FFmpeg software fallback. H.264 4:4:4
-  clips need conversion to 4:2:0 to use the hardware path.
-- Online services, skin downloads, MIDI and webcam are disabled on PS5.
+The Vulkan backend replaces the old raylib/OpenGL console renderer. SDL2 now
+provides the logical window and DualSense input; it does not create a GL context
+or present frames. bgfx uses the linked PS5 Vulkan RADV driver and a native
+`VK_KHR_display` surface. SPIR-V shaders are compiled by a matching host shaderc.
 
-Default DualSense bindings:
+**Upstream bgfx does not implement 3D models yet.** Its model entry points are
+placeholders, so Don's 3D model is absent with this backend. The retained PS5
+model scale is 100% of the drawable's pixel density when model support becomes
+available. Implementing bgfx model rendering is a separate, shared-backend task.
 
-| Action | Buttons |
+The display bridge selects the largest advertised mode up to 3840x2160. VSync
+is mandatory. The console settings offer 60/120 Hz, with HDMI capability checking
+and fallback to 60 Hz. The new Vulkan renderer and mode switching still require
+console validation; the previous OpenGL build's hardware results do not validate
+this replacement.
+
+Retained console features:
+
+- Native 48 kHz stereo AudioOut and upstream loudness normalization.
+- Native filesystem compatibility and bounded texture/audio/skin JSON caches.
+- Cancellable asynchronous song previews.
+- Native H.264 Baseline/Main/High 8-bit 4:2:0 video decoding with software fallback.
+- User data and logs under `/data/YataiDON` (`native.log`).
+- Online services, skin downloads, MIDI and webcam disabled on PS5.
+
+## Controls
+
+| Action | DualSense buttons |
 |---|---|
 | Left Ka | D-pad Up/Left, L1, L2 |
 | Left Don | D-pad Down/Right, L3 |
@@ -29,92 +42,73 @@ Default DualSense bindings:
 | Restart song | Options/Start |
 | Back / leave song | Touchpad |
 
-Menus use D-pad navigation, Cross to confirm, and Circle/touchpad to go back.
-Fullscreen, borderless and VSync settings are hidden on PS5.
+Menus use D-pad navigation, Cross to confirm, Circle/touchpad to go back.
+Fullscreen, borderless and VSync controls are hidden on the console.
 
-## Build in Linux / WSL
+## Build
 
-Requires the public PS5 Payload SDK with C++ support, CMake, Ninja, Git, curl,
-and Python 3.12+. The local toolchain is `/opt/waddamburo-build/sdk` in the
-`WaddamburoProspero` WSL distribution.
+Use Linux or WSL with CMake 3.24+, Ninja, Python 3.11+, Git, Clang and a
+host C++ compiler. Install the public PS5 payload SDK and build the release RADV
+archive using [PS5 Vulkan](https://github.com/mihawk-99/PS5_Vulkan).
+Build FFmpeg using `ps5/build-ffmpeg.sh`; its installation must include MOV/MP4,
+H.264, AAC and Opus support. No Sony SDK or proprietary shader compiler is used.
 
 ```sh
-export PS5_PAYLOAD_SDK=/opt/waddamburo-build/sdk
-bash ps5/prepare.sh
-python3 ps5/prepare-game.py
-export PS5_FFMPEG_PREFIX="$PWD/ps5/vendor/ffmpeg-ps5"
-bash ps5/build-game.sh
+export PS5_PAYLOAD_SDK=/path/to/ps5-payload-sdk
+export PS5_FFMPEG_PREFIX=/path/to/ffmpeg-ps5
+export PS5_VULKAN_PREFIX=/path/to/PS5_Vulkan/.deps/native/radv-release
+BUILD_JOBS=8 bash ps5/build-game.sh
 python3 ps5/package.py --skip-media
 python3 ps5/tools/verify-bundle.py
 ```
 
-The SDK and dependency inputs have been copied into the ignored `ps5/vendor`
-folder in this local checkout. Generated CMake builds are recreated here, not
-copied from the previous checkout. The game builder bootstraps SDL and installs
-a matching 4K display profile before building the game.
+`build-game.sh` fetches pinned source dependencies, applies a checksum-verified
+bgfx patch, builds shaderc for the host, then cross-compiles into
+`ps5/build-vulkan`. Set `YATAIDON_HOST_BGFX_BUILD` to reuse a host shaderc build.
+The main CMake entry point also selects `ps5/` when the SDK toolchain sets `PS5`.
 
-For a fresh clone, `prepare.sh` fetches pinned OpenGL/raylib/SDL inputs and
-`prepare-game.py` fetches the game libraries. Build a PS5 FFmpeg prefix with
-`ps5/build-ffmpeg.sh` before the game build: set `FFMPEG_SOURCE` to FFmpeg 8.1.2
-sources and `PS5_OPUS_PREFIX` to a PS5 libopus prefix. The script enables MP4/MOV,
-H.264, AAC and the supported audio codecs. `FFMPEG_BUILD_DIR` can point to the
-Linux filesystem for faster compilation. Packaging rejects incomplete prefixes.
+Packaging expects a public native-app template in `ps5/vendor/native-template`
+(or `--template /path/to/template`), including `tooling/native`, the clean-room
+`runtime/libc.prx` plus its checksum, and host zlib under
+`.deps/native/zlib/root/usr`. Generated import stubs describe AGC/Videodec2
+firmware imports; their placeholder bodies never ship in the executable.
 
-The native packaging template supplies public tooling, a prepared host zlib,
-and its checksum-verified clean-room `runtime/libc.prx`. The local checkout has
-these inputs under ignored `ps5/vendor/native-template`, the packager default,
-so it no longer needs the previous checkout or the sibling Waddamburo checkout
-to build. For a fresh clone, supply a compatible public native-app template
-with `ps5/package.py --template /path/to/template`, or prepare that default
-directory. The template is a packaging input, not the renderer.
+Output: `ps5/dist/YataiDON-PS5-experimental.zip`. Replace the complete
+`PPSA99329` app folder using your folder-app installation workflow. With
+`--skip-media`, existing skins, songs, settings and saves remain external;
+install complete skins and songs under `/data/YataiDON`. The build receipt
+records the executable, game archive and linked driver hashes.
 
-## Install
+## Verification
 
-Replace the complete `Homebrew/PPSA99329` app folder, including `sce_sys`, and
-remount/register it through ShadowMount+. The icon is `ps5/assets/icon0.png`.
+Host regression tests cover display discovery, mode selection and missing
+Vulkan entry points, refresh rejection/restoration, the actual audio mixer's
+looping/retrigger behavior, bounded preview work and H.264 packet conversion.
+They do not prove GPU rendering, HDMI output, audio timing or console stability.
 
-Game data lives at `/data/YataiDON` on the console. Install complete skins and
-parent dependencies under `/data/YataiDON/Skins`, and songs under
-`/data/YataiDON/Songs`. Git LFS pointers are not usable skin assets. Configuration,
-scores and `native.log` are stored in that data folder.
+```sh
+python3 ps5/test-mixer.py
+cc -std=c11 -fsanitize=address,undefined -I"$PS5_VULKAN_PREFIX/include" \
+  ps5/vulkan-display-test.c -o /tmp/yataidon-vulkan-display-test
+/tmp/yataidon-vulkan-display-test
+cc ps5/display-test.c -o /tmp/yataidon-display-test
+/tmp/yataidon-display-test
+```
 
-`ps5/dist/PPSA99329` is the rebuilt native app. Local migration also includes
-`YataiDON-PS5-hardware-video-v4.zip` and `YataiDON-PS5-hardware-compatible-title.zip`
-in `ps5/dist`; the latter contains a converted Nijiiro title clip for `/data`.
-`--skip-media` packages the app and shaders while leaving installed skins and
-songs out of the ZIP; omit it to build a full data bundle.
+Before treating a build as a release, check onboarding, entry, song selection,
+settings, song playback, Options restart/touchpad back, video playback, 60/120 Hz
+switching and shutdown on a console. Keep the last working build for comparison.
 
-Generated packages, dependencies, console logs/config and downloaded skins are
-ignored by Git. Do not distribute the intermediate payload link-check executable.
+## Dependency notes and attribution
 
-## Verification and known limits
-
-On-console logs confirmed native 4K/120 Hz output and successful hardware H.264
-frames for `2011_OP.mp4` (1280x720). Model rendering and controller operation
-have also been tested by the user. Hardware decode uses the native title import
-mechanism; linker-only decoder stub bodies are not packaged or executed.
-
-Video still converts NV12 to RGBA on the CPU and uploads textures. Console
-measurements were approximately 13 ms per 720p upload and 30 ms per 1080p upload;
-hardware decompression alone therefore does not guarantee 120 FPS playback.
-The remaining looping/SFX reports need further console verification. The later
-report of a silent song track was withdrawn by the user as working.
-
-Host regression tests cover mixer looping/one-shots/retrigger serialization,
-bounded preview-worker scheduling, asset-cache ownership/eviction, H.264 Annex-B
-conversion, native audio output, filesystem/directory/memory adapters, and thread
-cleanup. Run `python3 ps5/test-mixer.py`; the other `ps5/*-test.cpp` and
-`ps5/*-test.c` files are host test programs. `ps5/tools/verify-bundle.py` checks
-native file hashes, title/HFR metadata, SELF magic and package integrity.
-
-## Sources and licensing
-
-YataiDON and the PS5 OpenGL integration are GPL-3.0. OpenGL/raylib/SDL and game
-library revisions are pinned in the preparation scripts. Dependency licenses
-are included by the packager.
-
-The public hardware decoder ABI/call sequence comes from
-[EVO Player](https://github.com/sainsaji/EVO-PLAYER-PS5), commit
-`875f766dc9de762c1a1f608005d0afd1f25116f4`, based on ProsperoLight. Its provenance
-is retained in `src/platform/ps5_videodec2_abi.h` and `ps5/videodec-link-stub.c`.
-No Sony SDK headers, firmware modules or proprietary decoder binaries are bundled.
+- Upstream merge: `c59f6ac` (2026-10-27 snapshot).
+- bgfx.cmake `v1.167.9590-598`, matching upstream. The release tarball SHA256 and
+  original/patched file hashes are checked by preparation tools.
+- The native display/procedure bridge and bgfx adaptation follow Waddamburo's
+  MIT-licensed native PS5 bridge; the patch is kept outside vendored sources.
+- The driver used for local build validation is PS5 Vulkan `f410e67a`, with Mesa
+  `1ba9874f` and release archive SHA256
+  `85d0ac684b3b74e446992150a7fbb04f543a78429a63e0b25a0cbf1cbac26dfc`.
+- Runtime linker/logging helpers retain BlackBearReloaded's GPL-3.0-or-later
+  notices. AGC import descriptions retain Mihawk-99's GPL notices.
+- Generated builds, libraries, media and logs are ignored; they are not PR inputs.

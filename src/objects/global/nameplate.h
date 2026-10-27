@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../../libs/file/script.h"
 #include "../../libs/global_data.h"
-#include "../../libs/script.h"
 
 class Nameplate : public LuaScript {
     sol::protected_function fn_update;

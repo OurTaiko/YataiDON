@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <deque>
@@ -12,6 +13,7 @@
 #include <regex>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -83,8 +85,8 @@ struct CameraEvent {
 };
 
 struct TimelineObject {
-    double start_time;
-    double end_time;
+    double start_time = 0.0;
+    double end_time = 0.0;
 
     std::optional<double> bpm;
     std::optional<std::string> branch_params;
@@ -259,6 +261,8 @@ struct NoteList {
 struct CourseData {
     double level = 0;
     std::vector<int> balloon;
+    // BALLOONNOR/EXP/MAS: balloons along each branch's route; empty: BALLOON is used
+    std::array<std::vector<int>, 3> branch_balloon;
     std::vector<int> scoreinit;
     double scorediff = 0;
     bool is_branching = false;
@@ -268,7 +272,7 @@ struct TJAMetadata {
     std::map<std::string, std::string> title = {{"en", ""}};
     std::map<std::string, std::string> subtitle = {{"en", ""}};
     bool subtitle_full_display = false;
-    std::string genre = "";
+    std::string genre;
     fs::path wave;
     double demostart = 0.0f;
     double offset = 0.0f;
@@ -276,7 +280,7 @@ struct TJAMetadata {
     fs::path bgmovie;
     double movieoffset = 0.0f;
     fs::path preimage;
-    std::string scene_preset = "";
+    std::string scene_preset;
     std::map<int, CourseData> course_data;
 };
 
@@ -300,6 +304,9 @@ struct ParserState {
     size_t balloon_cursor = 0;
     double balloon_index = 0;
     size_t branch_balloon_cursor = 0;
+    std::array<std::vector<int>, 3> route_balloons; // normal, expert, master
+    std::array<size_t, 3> route_cursor{};
+    int branch = -1; // 0 #N, 1 #E, 2 #M; -1 outside the branches
     bool barline_added = false;
     double sudden_appear = 0.0f;
     double sudden_moving = 0.0f;
@@ -335,7 +342,7 @@ public:
 
     TJAParser() = default;
 
-    TJAParser(const std::filesystem::path& path, int start_delay = 0, int player_num = 0);
+    TJAParser(std::filesystem::path path, int start_delay = 0, int player_num = 0);
 
     std::filesystem::path file_path;
     TJAMetadata metadata;
@@ -379,6 +386,13 @@ private:
     static std::string trim(const std::string& str);
     static std::vector<int> parse_balloon_data(const std::string& data);
 
+    // First note line and #END line of the chart this player plays in a course
+    struct ChartRange {
+        int start = -1;
+        int end = -1;
+        ScrollType scroll_type = ScrollType::NMSCROLL;
+    };
+    ChartRange find_chart(int diff) const;
     std::vector<std::vector<std::string>> data_to_notes(int diff);
 
     Note* get_note_ptr(Note& variant);
@@ -418,7 +432,7 @@ private:
 
 double get_ms_per_measure(double bpm_val, double time_sig);
 int calculate_base_score(const NoteList& notes);
-std::string test_encodings(const std::filesystem::path& file_path);
+std::string_view test_encodings(const std::filesystem::path& file_path);
 std::string strip_comments(const std::string& code);
 
 Interval get_note_interval_type(double interval_ms, double bpm, double time_sig = 4.0);

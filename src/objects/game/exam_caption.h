@@ -5,8 +5,9 @@
 #include <string>
 #include <utility>
 
+#include "../../libs/gfx/color_utils.h"
+#include "../../libs/gfx/text.h"
 #include "../../libs/global_data.h"
-#include "../../libs/text.h"
 
 inline std::string exam_threshold_text(const TextureWrapper& tex, const std::string& type, const std::string& range,
                                        const std::string& num, const std::string& lang) {
@@ -55,15 +56,16 @@ inline std::string exam_border_text(const TextureWrapper& tex, const Exam& exam,
 
 class ExamCaptionCache {
 public:
-    OutlinedText* get(const std::string& s, int size, float outline, ray::Color fill = ray::WHITE,
-                      ray::Color ol = ray::BLACK) {
+    OutlinedText* get(const std::string& s, int size, float outline, Color fill = Color::WHITE,
+                      Color ol = Color::BLACK) {
         if (s.empty() || size <= 0) {
             return nullptr;
         }
-        const std::string k = s + "\x1f" + std::to_string(size) + "\x1f" + std::to_string((int)(outline * 100)) +
-                              "\x1f" + std::to_string(fill.r) + "," + std::to_string(fill.g) + "," +
-                              std::to_string(fill.b) + "," + std::to_string(fill.a) + "\x1f" + std::to_string(ol.r) +
-                              "," + std::to_string(ol.g) + "," + std::to_string(ol.b) + "," + std::to_string(ol.a);
+        const std::string k = s + "\x1f" + std::to_string(size) + "\x1f" +
+                              std::to_string(static_cast<int>(outline * 100)) + "\x1f" + std::to_string(fill.r) + "," +
+                              std::to_string(fill.g) + "," + std::to_string(fill.b) + "," + std::to_string(fill.a) +
+                              "\x1f" + std::to_string(ol.r) + "," + std::to_string(ol.g) + "," + std::to_string(ol.b) +
+                              "," + std::to_string(ol.a);
         auto it = items.find(k);
         if (it == items.end()) {
             it = items.emplace(k, std::make_unique<OutlinedText>(s, size, fill, ol, false, outline)).first;
@@ -73,7 +75,7 @@ public:
 
     void clear() { items.clear(); }
 
-    static float pad_for(float outline, float screen_scale) { return (float)((int)(outline * screen_scale) + 2); }
+    static float pad_for(float outline, float screen_scale) { return static_cast<int>(outline * screen_scale) + 2; }
 
 private:
     std::map<std::string, std::unique_ptr<OutlinedText>> items;

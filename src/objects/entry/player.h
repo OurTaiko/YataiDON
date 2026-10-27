@@ -3,7 +3,7 @@
 #include <memory>
 #include <optional>
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 #include "../global/chara_3d.h"
 #include "../global/indicator.h"
 #include "../global/nameplate.h"

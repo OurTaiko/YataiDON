@@ -30,7 +30,8 @@ fi
 # Generate per-skin checksums (used by updater for individual file updates)
 echo ""
 echo "Generating skin checksums..."
-git submodule status | while IFS=' ' read -r commit path _; do
+for path in Skins/*/; do
+    path=${path%/}
     skin_name=$(basename "$path")
     (
         cd "$path"

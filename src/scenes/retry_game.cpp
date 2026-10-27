@@ -1,12 +1,12 @@
 #include "retry_game.h"
 
-#include "../libs/input.h"
-#include "../libs/scores.h"
+#include "../libs/file/scores.h"
+#include "../libs/input/input.h"
 
 void RetryGameScreen::on_screen_start() {
     Screen::on_screen_start();
     auto pd = scores_manager.get_player_data(get_player_id(global_data.player_num));
-    scene.emplace((int)global_data.player_num, needed_hits);
+    scene.emplace(static_cast<int>(global_data.player_num), needed_hits);
 
     chara = make_chara_from_player_data(pd ? &*pd : nullptr);
     if (pd) {
@@ -67,7 +67,8 @@ std::optional<Screens> RetryGameScreen::update() {
             }
         }
         if (phase == "count" && chara_progress < chara_target) {
-            chara_progress = std::min(chara_target, chara_progress + 0.5f * (float)(current_ms - last_ms) / 100.0f);
+            chara_progress =
+                std::min(chara_target, chara_progress + 0.5f * static_cast<float>(current_ms - last_ms) / 100.0f);
             chara->set_anim_progress(chara_progress);
         }
         chara->update(current_ms);

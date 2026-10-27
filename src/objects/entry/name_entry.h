@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 class NameEntry : public LuaScript {
 public:

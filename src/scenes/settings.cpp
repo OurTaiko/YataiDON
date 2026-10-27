@@ -1,14 +1,12 @@
 #include "settings.h"
 
-#include "../libs/audio.h"
-#include "../libs/filesystem.h"
+#include "../libs/audio/audio.h"
+#include "../libs/file/filesystem.h"
+#include "../libs/file/scores.h"
 #include "../libs/global_data.h"
-#include "../libs/input.h"
-#include "../libs/network.h"
-#include "../libs/scores.h"
+#include "../libs/input/input.h"
+#include "../libs/network/network.h"
 #include "../objects/song_select/file_navigator/navigator.h"
-
-void save_config(const Config& config);
 
 void SettingsScreen::on_screen_start() {
     Screen::on_screen_start();
@@ -90,10 +88,10 @@ std::optional<Screens> SettingsScreen::handle_input() {
     if (!box_manager->editing_text() && check_key_pressed(global_data.config->keys.back_key))
         return on_screen_end(Screens::ENTRY);
 #endif
-    if (ray::IsKeyPressed(ray::KEY_F1)) {
+    if (key_pressed(SDL_SCANCODE_F1)) {
         return on_screen_end(Screens::INPUT_CALI);
     }
-    if (ray::IsKeyPressed(ray::KEY_F3)) {
+    if (key_pressed(SDL_SCANCODE_F3)) {
         return on_screen_end(Screens::INPUT_TEST);
     }
     const bool typing = box_manager->editing_text();

@@ -3,8 +3,8 @@
 #include <array>
 #include <optional>
 
-#include "../../../libs/scores.h"
-#include "../../../libs/script.h"
+#include "../../../libs/file/scores.h"
+#include "../../../libs/file/script.h"
 
 class ScoreHistory : public LuaScript {
 public:

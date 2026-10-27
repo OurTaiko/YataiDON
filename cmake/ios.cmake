@@ -24,7 +24,22 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
   XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
   XCODE_ATTRIBUTE_ENABLE_BITCODE "NO"
+  # CMake leaves INSTALL_PATH empty, so Archive would produce an empty
+  # Generic Xcode Archive instead of an iOS App Archive.
+  XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+  XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
+  XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+  # App Store Connect expects a dSYM for every archive, Release included.
+  XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS "YES"
+  XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+  # Archive collects dSYMs from Xcode's standard products folder, not from the
+  # custom RUNTIME_OUTPUT_DIRECTORY the app itself is built into.
+  XCODE_ATTRIBUTE_DWARF_DSYM_FOLDER_PATH "$(SYMROOT)/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)"
   XCODE_GENERATE_SCHEME TRUE)
+# A single 1024x1024 AppIcon; actool generates the per-device sizes.
+target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/ios/Assets.xcassets")
+set_source_files_properties("${CMAKE_SOURCE_DIR}/ios/Assets.xcassets" PROPERTIES
+  MACOSX_PACKAGE_LOCATION Resources)
 if(IOS_DEVELOPMENT_TEAM)
   set_target_properties(${PROJECT_NAME} PROPERTIES
     XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${IOS_DEVELOPMENT_TEAM}")

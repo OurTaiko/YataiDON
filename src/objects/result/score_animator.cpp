@@ -1,6 +1,7 @@
 #include "score_animator.h"
 
 #include <algorithm>
+#include <iterator>
 
 ScoreAnimator::ScoreAnimator(int target) {
     target_score = std::to_string(std::max(target, 0));
@@ -37,7 +38,7 @@ std::string ScoreAnimator::next_score() {
 
     if (std::stoi(ret_val) == 0) {
         int active_digits = target_score.size() - digit_index;
-        if (!(active_digits > (int)target_score.size())) {
+        if (!(active_digits > std::ssize(target_score))) {
             return std::string(target_score.size() - digit_index, '0');
         }
         return "0";

@@ -15,8 +15,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "../libs/ray.h"
-#include "../libs/sdl_compat.h"
+#include "../libs/gfx.h"
+#include "../libs/gfx/sdl_compat.h"
 
 #if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
 #include <cpptrace/cpptrace.hpp>
@@ -47,7 +47,7 @@ namespace {
         buf[1] = 'x';
         for (std::size_t i = 0; i < sizeof(value) * 2; i++) {
             int nibble = (value >> (4 * (sizeof(value) * 2 - 1 - i))) & 0xF;
-            buf[2 + i] = nibble < 10 ? char('0' + nibble) : char('a' + nibble - 10);
+            buf[2 + i] = nibble < 10 ? static_cast<char>('0' + nibble) : static_cast<char>('a' + nibble - 10);
         }
         write_all(fd, buf, sizeof(buf));
     }
@@ -110,7 +110,7 @@ void unix_close_window() {
         egl_wayland = dlopen("libnvidia-egl-wayland.so.1", RTLD_LAZY | RTLD_NOLOAD);
     }
 
-    ray::CloseWindow();
+    close_window();
 
     if (egl_wayland) {
         dlclose(egl_wayland);

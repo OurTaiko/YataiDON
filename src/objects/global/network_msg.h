@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 class NetworkMsg : public LuaScript {
     sol::protected_function fn_update;

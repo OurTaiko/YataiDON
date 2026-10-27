@@ -71,31 +71,62 @@ else()
   target_include_directories(SQLite3_lib PUBLIC ${sqlite3_SOURCE_DIR})
 endif()
 
-# raylib
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
-set(PLATFORM "SDL" CACHE STRING "" FORCE)
-set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
-set(SUPPORT_MODULE_RAUDIO OFF CACHE BOOL "" FORCE)
-set(SUPPORT_CUSTOM_FRAME_CONTROL ON CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_JPG ON CACHE BOOL "" FORCE)
-set(SUPPORT_SCREEN_CAPTURE OFF CACHE BOOL "" FORCE)
-if(ANDROID OR IOS OR EMSCRIPTEN)
-  set(OPENGL_VERSION "ES 3.0" CACHE STRING "" FORCE)
-endif()
-message(STATUS "Fetching raylib...")
-FetchContent_Declare(
-  raylib
-  GIT_REPOSITORY https://github.com/raysan5/raylib.git
-  GIT_TAG        6.2
-  GIT_SHALLOW    TRUE
-  UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(raylib)
-FetchContent_MakeAvailable(raylib)
-if(IOS)
-  target_include_directories(raylib PUBLIC "${CMAKE_SOURCE_DIR}/ios/compat")
-  target_link_libraries(raylib PUBLIC "-framework OpenGLES")
+# raylib (the bgfx backend only uses the stb/cgltf headers in its src/external)
+if(YATAIDON_GFX_BACKEND STREQUAL "raylib")
+  set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
+  set(PLATFORM "SDL" CACHE STRING "" FORCE)
+  set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
+  set(SUPPORT_MODULE_RAUDIO OFF CACHE BOOL "" FORCE)
+  set(SUPPORT_CUSTOM_FRAME_CONTROL ON CACHE BOOL "" FORCE)
+  set(SUPPORT_FILEFORMAT_JPG ON CACHE BOOL "" FORCE)
+  set(SUPPORT_SCREEN_CAPTURE OFF CACHE BOOL "" FORCE)
+  if(ANDROID OR IOS OR EMSCRIPTEN)
+    set(OPENGL_VERSION "ES 3.0" CACHE STRING "" FORCE)
+  endif()
+  message(STATUS "Fetching raylib...")
+  FetchContent_Declare(
+    raylib
+    GIT_REPOSITORY https://github.com/raysan5/raylib.git
+    GIT_TAG        6.2
+    GIT_SHALLOW    TRUE
+    UPDATE_DISCONNECTED TRUE
+  )
+  FetchContent_GetProperties(raylib)
+  FetchContent_MakeAvailable(raylib)
+  if(IOS)
+    target_include_directories(raylib PUBLIC "${CMAKE_SOURCE_DIR}/ios/compat")
+    target_link_libraries(raylib PUBLIC "-framework OpenGLES")
+  endif()
+else()
+  FetchContent_Declare(
+    raylib
+    GIT_REPOSITORY https://github.com/raysan5/raylib.git
+    GIT_TAG        6.2
+    GIT_SHALLOW    TRUE
+    UPDATE_DISCONNECTED TRUE
+    SOURCE_SUBDIR  headers-only # no CMakeLists there: populate without building
+  )
+  FetchContent_MakeAvailable(raylib)
+
+  set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(BGFX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+  set(BGFX_BUILD_TOOLS_SHADER ON CACHE BOOL "" FORCE)
+  set(BGFX_BUILD_TOOLS_TEXTURE OFF CACHE BOOL "" FORCE)
+  set(BGFX_BUILD_TOOLS_GEOMETRY OFF CACHE BOOL "" FORCE)
+  set(BGFX_BUILD_TOOLS_BIN2C OFF CACHE BOOL "" FORCE)
+  set(BGFX_INSTALL OFF CACHE BOOL "" FORCE)
+  set(BGFX_CUSTOM_TARGETS OFF CACHE BOOL "" FORCE)
+  message(STATUS "Fetching bgfx...")
+  FetchContent_Declare(
+    bgfx
+    GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
+    GIT_TAG        v1.167.9590-598
+    GIT_SHALLOW    TRUE
+    UPDATE_DISCONNECTED TRUE
+  )
+  FetchContent_MakeAvailable(bgfx)
 endif()
 
 # RapidJSON
@@ -328,6 +359,35 @@ else()
           )
     FetchContent_MakeAvailable(libsamplerate)
   endif()
+endif()
+
+# libebur128
+if(NOT ANDROID AND NOT IOS AND NOT EMSCRIPTEN AND PkgConfig_FOUND)
+  pkg_check_modules(EBUR128 QUIET IMPORTED_TARGET libebur128)
+endif()
+
+if(TARGET PkgConfig::EBUR128)
+  add_library(yataidon_ebur128 ALIAS PkgConfig::EBUR128)
+else()
+  function(yataidon_fetch_ebur128)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+    set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+    set(ENABLE_INTERNAL_QUEUE_H ON)
+    set(BUILD_SHARED_LIBS OFF)
+    set(ENABLE_TESTS OFF)
+
+    FetchContent_Declare(libebur128
+      GIT_REPOSITORY https://github.com/jiixyj/libebur128.git
+      GIT_TAG v1.2.6
+      GIT_SHALLOW TRUE
+    )
+
+    FetchContent_MakeAvailable(libebur128)
+    target_include_directories(ebur128 INTERFACE "${libebur128_SOURCE_DIR}/ebur128")
+    add_library(yataidon_ebur128 ALIAS ebur128)
+  endfunction()
+
+  yataidon_fetch_ebur128()
 endif()
 
 # FFmpeg

@@ -46,3 +46,6 @@ YataiDON.wasm
 /ps5/system-module-names.txt
 /ps5/migration-files.json
 /ps5/**/__pycache__/
+
+/ps5/build-vulkan/
+/ps5/build-host-bgfx/

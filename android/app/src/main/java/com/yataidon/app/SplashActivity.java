@@ -30,7 +30,7 @@ import java.io.OutputStream;
 // background thread here keeps onCreate() itself fast, so the normal
 // activity lifecycle isn't affected while extraction runs behind it.
 public class SplashActivity extends Activity {
-    // Matches the hardcoded cwd in set_working_directory_to_executable() (src/libs/filesystem.cpp).
+    // Matches the hardcoded cwd in set_working_directory_to_executable() (src/libs/file/filesystem.cpp).
     private static final String GAME_DATA_DIR = "/sdcard/YataiDON";
 
     @Override

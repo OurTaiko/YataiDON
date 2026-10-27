@@ -181,9 +181,12 @@ else()
           -O2
           -march=x86-64
           -DNDEBUG
+          -flto=auto
       )
+    target_link_options(${PROJECT_NAME} PRIVATE -flto=auto)
   elseif(IOS)
-    target_compile_options(${PROJECT_NAME} PRIVATE -O2 -DNDEBUG)
+    target_compile_options(${PROJECT_NAME} PRIVATE -O2 -DNDEBUG -flto=thin)
+    target_link_options(${PROJECT_NAME} PRIVATE -flto=thin)
   elseif(APPLE)
     target_compile_options(${PROJECT_NAME} PRIVATE
           -O2
@@ -194,7 +197,9 @@ else()
     target_compile_options(${PROJECT_NAME} PRIVATE
           -O2
           -DNDEBUG
+          -flto=thin
       )
+    target_link_options(${PROJECT_NAME} PRIVATE -flto=thin)
   elseif(EMSCRIPTEN)
     target_compile_options(${PROJECT_NAME} PRIVATE
           -O2

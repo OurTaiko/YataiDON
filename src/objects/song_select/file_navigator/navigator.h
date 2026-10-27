@@ -140,15 +140,15 @@ private:
     void wait_for_song_files();
     void enqueue_box(std::unique_ptr<BaseBox> box);
     void enqueue_inline_box(std::unique_ptr<BaseBox> box);
-    void parse_song_list(const fs::path& path, BoxDef box_def, bool inline_mode);
-    void load_current_directory_async(const fs::path path);
+    void parse_song_list(const fs::path& path, const BoxDef& box_def, bool inline_mode);
+    void load_current_directory_async(const fs::path& path);
     void load_all_roots();
     void load_collection_difficulty(const fs::path& path, const BoxDef& box_def, int course, int level, int order = 1);
     void load_from_song_list(const fs::path& path, const BoxDef& box_def, bool mark_favorite);
     void load_collection_new(const fs::path& path, const BoxDef& box_def);
     void load_collection_recommended(const fs::path& path, const BoxDef& box_def);
     void load_collection_search(const fs::path& path, const BoxDef& box_def);
-    void load_songs_inline_async(const fs::path path, BoxDef box_def);
+    void load_songs_inline_async(fs::path path, BoxDef box_def);
     void promote_recent_box(const SongBox* song);
     void collapse_inline_now();
     void flush_pending_boxes();
@@ -169,8 +169,8 @@ public:
     SongSelectScript* script = nullptr;
 
     void join_loader();
-    // `files`: the chart files under songs_paths when the caller already listed them (the loading screen)
-    void preload(std::vector<fs::path> songs_paths, std::optional<std::vector<fs::path>> files = std::nullopt);
+    // `listed`: the chart files under songs_paths when the caller already listed them (the loading screen)
+    void preload(std::vector<fs::path> songs_paths, std::optional<std::vector<fs::path>> listed = std::nullopt);
     void init(std::vector<fs::path> songs_paths);
 
     void reset_for_skin_reload();
@@ -184,7 +184,7 @@ public:
     bool diff_sort_ready() { return awaiting_diff_sort; }
     void apply_diff_sort(int course, int level, int order = 1);
     void cancel_diff_sort();
-    void load_current_directory(const fs::path path);
+    void load_current_directory(fs::path path);
     bool jump_to_song(const std::string& hash);
     bool jump_to_song_path(const fs::path& song_path);
     void enter_diff_select();

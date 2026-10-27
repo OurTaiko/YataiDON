@@ -2,7 +2,7 @@
 
 #include <array>
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // The practice pause menu. This keeps the state (selected row, dialog, selected button) and the
 // actions; the skin's PracticeMenu (game/practice_menu.lua) draws it and hit-tests the pointer.
@@ -51,7 +51,7 @@ public:
     Action confirm();
 
     // Handle mouse/touch input for menu navigation and selection
-    Action handle_mouse_input(const ray::Camera2D& camera, ray::Vector2 mouse_pos, bool clicked, bool auto_on);
+    Action handle_mouse_input(const Camera2D& camera, Vec2 mouse_pos, bool clicked, bool auto_on);
 
     // Jump-point editor, entered from the SET_MARK menu row.
     void open_mark_edit();

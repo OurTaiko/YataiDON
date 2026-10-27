@@ -1,7 +1,7 @@
 ﻿#include "box_manager.h"
 
+#include "../../libs/gfx/text.h"
 #include "../../libs/global_data.h"
-#include "../../libs/text.h"
 
 static constexpr int ENTRY_FADE_OUT_ANIM_ID = 9;
 
@@ -20,7 +20,6 @@ BoxManager::BoxManager(bool two_player) : is_2p(two_player) {
 }
 
 void BoxManager::build_board_list() {
-    const std::string lang = global_data.config->general.language;
     int font_size = tex.get_skin_config(SC::ENTRY_BOX_TEXT)->font_size;
 
     if (script_manager.lua) {

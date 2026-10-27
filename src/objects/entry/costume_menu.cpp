@@ -4,11 +4,11 @@
 #include <random>
 #include <spdlog/spdlog.h>
 
-#include "../../libs/audio.h"
-#include "../../libs/filesystem.h"
-#include "../../libs/input.h"
-#include "../../libs/text.h"
-#include "../../libs/texture.h"
+#include "../../libs/audio/audio.h"
+#include "../../libs/file/filesystem.h"
+#include "../../libs/gfx/text.h"
+#include "../../libs/gfx/texture.h"
+#include "../../libs/input/input.h"
 
 CostumeMenu::CostumeMenu(PlayerNum player_num) : player_num(player_num), is_2p(player_num == PlayerNum::P2) {
     const SkinInfo* info = font_manager.get_text_info("entry_costume_text");
@@ -34,7 +34,7 @@ CostumeMenu::CostumeMenu(PlayerNum player_num) : player_num(player_num), is_2p(p
 
 CostumeMenu::~CostumeMenu() {
     for (auto& icon : costume_icons) {
-        ray::UnloadTexture(icon);
+        unload_texture(icon);
     }
 }
 
@@ -42,7 +42,7 @@ void CostumeMenu::load_costume_icons(const std::string& subdir, const std::strin
     icon_prev_index = -1;
     icon_scroll_dir = 0;
     for (auto& icon : costume_icons) {
-        ray::UnloadTexture(icon);
+        unload_texture(icon);
     }
     costume_icons.clear();
     costume_ids.clear();
@@ -67,7 +67,7 @@ void CostumeMenu::load_costume_icons(const std::string& subdir, const std::strin
     }
     std::ranges::sort(entries, [](const auto& a, const auto& b) { return a.first < b.first; });
     for (auto& [id, path] : entries) {
-        ray::Texture t = ray::LoadTexture(path.string().c_str());
+        Texture t = load_texture(path.string().c_str());
         if (t.id == 0 || t.width <= 0 || t.height <= 0) {
             spdlog::warn("CostumeMenu: failed to load icon {}", path.string());
             continue;
@@ -188,8 +188,8 @@ void CostumeMenu::apply_preset(const std::string& item) {
     }
     preset_cos_id = id;
     preset_seq++;
-    spdlog::info("costume_preset: player={} item={} pool={} cos={} seq={}", (int)player_num, item, set->size(), id,
-                 preset_seq);
+    spdlog::info("costume_preset: player={} item={} pool={} cos={} seq={}", static_cast<int>(player_num), item,
+                 set->size(), id, preset_seq);
 }
 
 void CostumeMenu::update(double current_time_ms) {
@@ -223,7 +223,7 @@ void CostumeMenu::handle_input() {
     }
     if (costume_select_mode) {
         if (!costume_icons.empty()) {
-            int n = (int)costume_icons.size();
+            int n = static_cast<int>(costume_icons.size());
             if (menu_left_pressed(player_num)) {
                 costume_icon_index = (costume_icon_index - 1 + n) % n;
                 audio.play_sound("kat", VolumePreset::SOUND);
@@ -309,7 +309,7 @@ void CostumeMenu::draw() {
     if (costume_select_mode && !costume_icons.empty() && t_item_box) {
         float base_x = t_item_box->x[0] + x;
         float base_y = t_item_box->y[0] + y;
-        int n = (int)costume_icons.size();
+        int n = static_cast<int>(costume_icons.size());
         if (costume_icon_index != icon_prev_index) {
             if (icon_prev_index >= 0) {
                 int step = ((costume_icon_index - icon_prev_index) % n + n) % n;
@@ -318,8 +318,9 @@ void CostumeMenu::draw() {
             }
             icon_prev_index = costume_icon_index;
         }
-        float glide = icon_scroll_dir * ITEM_W *
-                      (1.0f - std::clamp((float)((now_ms - icon_scroll_start) / ICON_SCROLL_MS), 0.0f, 1.0f));
+        float glide =
+            icon_scroll_dir * ITEM_W *
+            (1.0f - std::clamp(static_cast<float>((now_ms - icon_scroll_start) / ICON_SCROLL_MS), 0.0f, 1.0f));
         base_x += glide;
         int slots = std::min(5, n);
         for (int i = 0; i < slots; i++) {
@@ -329,8 +330,8 @@ void CostumeMenu::draw() {
             float dw = icon.width * scale, dh = icon.height * scale;
             float ix = tex.draw_offset_x + base_x + i * ITEM_W + (ITEM_W - dw) / 2.0f;
             float iy = tex.draw_offset_y + base_y + (ITEM_W - dh) / 2.0f;
-            ray::DrawTexturePro(icon, {0, 0, (float)icon.width, (float)icon.height}, {ix, iy, dw, dh}, {0, 0}, 0,
-                                ray::WHITE);
+            draw_texture_pro(icon, {0, 0, static_cast<float>(icon.width), static_cast<float>(icon.height)},
+                             {ix, iy, dw, dh}, {0, 0}, 0, Color::WHITE);
         }
     }
 

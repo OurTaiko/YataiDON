@@ -1,10 +1,11 @@
 #pragma once
 
+#include "../../../libs/gfx/color_utils.h"
 #include "box_folder.h"
 
 class GenreBG {
 public:
-    GenreBG(const std::string& text_name, std::optional<ray::Color> color, TextureIndex texture_index, float distance);
+    GenreBG(const std::string& text_name, std::optional<Color> color, TextureIndex texture_index, float distance);
     ~GenreBG() {
     }
 
@@ -15,17 +16,17 @@ public:
     bool is_finished();
     bool is_complete();
 
-    int texture_frame() const { return (int)texture_index; }
+    int texture_frame() const { return static_cast<int>(texture_index); }
     OutlinedText* name_text() const { return name.get(); }
     bool has_recolor() const { return shader_loaded; }
     void begin_recolor() {
         if (shader_loaded) {
-            ray::BeginShaderMode(shader);
+            begin_shader_mode(shader);
         }
     }
     void end_recolor() {
         if (shader_loaded) {
-            ray::EndShaderMode();
+            end_shader_mode();
         }
     }
 
@@ -37,8 +38,8 @@ public:
     std::unique_ptr<MoveAnimation> move_right;
 
 private:
-    ray::Shader shader;
-    std::shared_ptr<ray::Shader> shader_owner;
+    Shader shader;
+    std::shared_ptr<Shader> shader_owner;
     bool shader_loaded = false;
     std::unique_ptr<OutlinedText> name;
     TextureIndex texture_index;

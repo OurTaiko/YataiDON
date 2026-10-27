@@ -1,6 +1,6 @@
 #include "diff_sort.h"
 
-#include "../../libs/audio.h"
+#include "../../libs/audio/audio.h"
 #include "song_select_script.h"
 
 static constexpr double SORT_IN_MS = 1000.0 / 60.0 * 10.0;
@@ -10,7 +10,7 @@ static constexpr double SORT_END_WAIT_MS = 2000.0;
 static constexpr double SORT_ARROW_MS = 1000.0 / 60.0 * 10.0;
 static constexpr float SORT_ARROW_PUSH = 12.5f;
 
-DiffSortSelect::DiffSortSelect(Statistics statistics, int prev_diff, int prev_level, SongSelectScript* script,
+DiffSortSelect::DiffSortSelect(const Statistics& statistics, int prev_diff, int prev_level, SongSelectScript* script,
                                int prev_order)
     : prev_diff(prev_diff), prev_level(prev_level), statistics(statistics), script(script) {
     one_menu_sort = tex.options[SCO::ONE_MENU_SORT] && script && script->has_sort_window();
@@ -22,12 +22,12 @@ DiffSortSelect::DiffSortSelect(Statistics statistics, int prev_diff, int prev_le
     num_boxes = 6;
     limits = {5, 7, 8, 10, 10};
 
-    bg_resize = (TextureResizeAnimation*)tex.get_animation(19);
-    diff_fade_in = (FadeAnimation*)tex.get_animation(20);
-    box_flicker = (FadeAnimation*)tex.get_animation(21);
-    confirmation_bounce = (MoveAnimation*)tex.get_animation(22);
-    blue_arrow_fade = (FadeAnimation*)tex.get_animation(29, true);
-    blue_arrow_move = (MoveAnimation*)tex.get_animation(30, true);
+    bg_resize = dynamic_cast<TextureResizeAnimation*>(tex.get_animation(19));
+    diff_fade_in = dynamic_cast<FadeAnimation*>(tex.get_animation(20));
+    box_flicker = dynamic_cast<FadeAnimation*>(tex.get_animation(21));
+    confirmation_bounce = dynamic_cast<MoveAnimation*>(tex.get_animation(22));
+    blue_arrow_fade = dynamic_cast<FadeAnimation*>(tex.get_animation(29, true));
+    blue_arrow_move = dynamic_cast<MoveAnimation*>(tex.get_animation(30, true));
 
     if (!one_menu_sort) {
         bg_resize->start();
@@ -89,10 +89,10 @@ int DiffSortSelect::lua_phase() const {
 
 float DiffSortSelect::lua_alpha() const {
     if (t_out > 0.0) {
-        float u = (float)((now_ms - t_out) / SORT_OUT_MS);
+        float u = (now_ms - t_out) / SORT_OUT_MS;
         return std::max(0.0f, 1.0f - u);
     }
-    float u = (float)((now_ms - t_open) / SORT_IN_MS);
+    float u = (now_ms - t_open) / SORT_IN_MS;
     return std::min(1.0f, std::max(0.0f, u));
 }
 
@@ -105,9 +105,8 @@ float DiffSortSelect::lua_arrow_offset(int row) const {
         return 0.0f;
     }
     double f = e / SORT_ARROW_MS * 10.0;
-    float local =
-        (f <= 5.0) ? (float)(-SORT_ARROW_PUSH * (f / 5.0)) : (float)(-SORT_ARROW_PUSH * (1.0 - (f - 5.0) / 5.0));
-    return local * (float)arrow_dir[row];
+    float local = (f <= 5.0) ? (-SORT_ARROW_PUSH * (f / 5.0)) : (-SORT_ARROW_PUSH * (1.0 - (f - 5.0) / 5.0));
+    return local * arrow_dir[row];
 }
 
 void DiffSortSelect::one_menu_sort_change_param(int move) {

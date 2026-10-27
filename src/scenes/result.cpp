@@ -1,10 +1,10 @@
 #include "result.h"
 
-#include "../libs/input.h"
+#include "../libs/input/input.h"
 
 void ResultScreen::on_screen_start() {
     Screen::on_screen_start();
-    SessionData& session_data = global_data.session_data[(int)global_data.player_num];
+    SessionData& session_data = global_data.session_data[static_cast<int>(global_data.player_num)];
     song_title = session_data.song_title;
     song_subtitle = (session_data.song_subtitle_full_display && !session_data.song_subtitle.empty())
                         ? session_data.song_subtitle
@@ -17,11 +17,10 @@ void ResultScreen::on_screen_start() {
     fade_in.emplace(global_data.player_num);
     skipped_time = 0;
     skip_enabled_ms = 0;
-    fs::path loading_graphic_path =
-        global_data.session_data[(int)global_data.player_num].selected_song.parent_path() / "Loading.png";
+    fs::path loading_graphic_path = session_data.selected_song.parent_path() / "Loading.png";
     background.reset();
     if (exists(loading_graphic_path)) {
-        ray::Texture2D loaded = ray::LoadTexture(loading_graphic_path.string().c_str());
+        Texture loaded = load_texture(loading_graphic_path.string().c_str());
         if (loaded.id != 0) {
             loading_graphic.emplace(loaded);
         } else {
@@ -36,7 +35,7 @@ void ResultScreen::on_screen_start() {
 
 Screens ResultScreen::on_screen_end(Screens next_screen) {
     if (loading_graphic.has_value()) {
-        ray::UnloadTexture(loading_graphic.value());
+        unload_texture(loading_graphic.value());
         loading_graphic.reset();
     }
     // the retry mini-game restarts the song from this session
@@ -51,7 +50,7 @@ double ResultScreen::reveal_end_ms() {
 }
 
 bool ResultScreen::retry_pending() const {
-    const SessionData& session_data = global_data.session_data[(int)global_data.player_num];
+    const SessionData& session_data = global_data.session_data[static_cast<int>(global_data.player_num)];
     const bool limit_reached =
         global_data.config->limits.song_limit > 0 && global_data.config->limits.song_limit == global_data.songs_played;
     return allow_retry && !tex.options[SCO::DISABLE_RETRY_GAME] && !session_data.result_data.cleared &&
@@ -159,7 +158,7 @@ void ResultScreen::draw_overlay() {
         fade_in->draw();
     }
     if (fade_out) {
-        ray::DrawRectangle(0, 0, tex.screen_width, tex.screen_height, ray::Fade(ray::BLACK, fade_out->attribute));
+        draw_rectangle(0, 0, tex.screen_width, tex.screen_height, fade(Color::BLACK, fade_out->attribute));
     }
     if (retry_message) {
         retry_message->draw();
@@ -179,9 +178,10 @@ void ResultScreen::draw() {
         background->draw();
     }
     if (loading_graphic.has_value()) {
-        ray::Rectangle src = {0, 0, (float)loading_graphic.value().width, (float)loading_graphic.value().height};
-        ray::Rectangle dst = {0, 0, (float)tex.screen_width, (float)tex.screen_height};
-        ray::DrawTexturePro(loading_graphic.value(), src, dst, {0, 0}, 0, ray::WHITE);
+        Rect src = {0, 0, static_cast<float>(loading_graphic.value().width),
+                    static_cast<float>(loading_graphic.value().height)};
+        Rect dst = {0, 0, static_cast<float>(tex.screen_width), static_cast<float>(tex.screen_height)};
+        draw_texture_pro(loading_graphic.value(), src, dst, {0, 0}, 0, Color::WHITE);
     }
     draw_song_info();
     if (player_1.has_value()) {

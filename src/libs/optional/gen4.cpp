@@ -8,7 +8,7 @@
 #include <rapidjson/document.h>
 #include <spdlog/spdlog.h>
 
-#include "../md5.h"
+#include "../math/md5.h"
 #include "miniz.h"
 
 namespace gen4 {

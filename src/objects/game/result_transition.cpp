@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-#include "../../libs/texture.h"
+#include "../../libs/gfx/texture.h"
 
 ResultTransition::ResultTransition(PlayerNum player_num) {
 

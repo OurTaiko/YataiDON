@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // Everything drawn during TitleState::ATTRACT_CAMERA (the camera background,
 // the two bana adverts, the cloud) -- one lua object owning the others.

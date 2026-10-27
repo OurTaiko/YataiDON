@@ -25,15 +25,15 @@ NoteArc::NoteArc(NoteType note_type, double current_ms, PlayerNum player_num, bo
 void NoteArc::update(double current_ms) {
     // elapsed_ms keeps running past the arc so trailing fireworks can finish
     elapsed_ms = std::max(0.0, current_ms - start_ms);
-    current_progress = std::min(1.0, elapsed_ms / ((double)arc_duration * 16.67));
+    current_progress = std::min(1.0, elapsed_ms / (arc_duration * 16.67));
 }
 
 void NoteArc::draw(float y) {
-    call(fn_draw, "NoteArc:draw", y, elapsed_ms, (double)arc_duration * 16.67);
+    call(fn_draw, "NoteArc:draw", y, elapsed_ms, arc_duration * 16.67);
 }
 
 bool NoteArc::is_finished() const {
-    double end_ms = (double)arc_duration * 16.67;
+    double end_ms = arc_duration * 16.67;
     if (is_balloon) {
         end_ms *= 1.5;
     }

@@ -2,13 +2,13 @@
 
 #include <unordered_set>
 
-#include "../libs/filesystem.h"
+#include "../libs/file/filesystem.h"
+#include "../libs/file/scores.h"
+#include "../libs/file/script.h"
 #include "../libs/global_data.h"
-#include "../libs/input.h"
-#include "../libs/scores.h"
-#include "../libs/script.h"
-#include "../libs/skin_updater.h"
-#include "../libs/song_parser.h"
+#include "../libs/input/input.h"
+#include "../libs/network/skin_updater.h"
+#include "../libs/parsers/song_parser.h"
 #include "../objects/song_select/file_navigator/navigator.h"
 #include "../objects/song_select/song_select_script.h"
 
@@ -35,10 +35,8 @@ void LoadingScreen::init_visuals() {
     progress_bar.x = (tex.screen_width - progress_bar.width) / 2;
     progress_bar.y = tex.screen_height * 0.85;
 
-    if (const SkinInfo* bar = tex.get_skin_config(SC::LOADING_PROGRESS_BAR)) {
-        if (bar->width > 0 && bar->height > 0) {
-            progress_bar = {bar->x, bar->y, bar->width, bar->height};
-        }
+    if (const SkinInfo* bar = tex.get_skin_config(SC::LOADING_PROGRESS_BAR); bar && bar->width > 0 && bar->height > 0) {
+        progress_bar = {bar->x, bar->y, bar->width, bar->height};
     }
 
     double fade_ms = 1000;
@@ -132,7 +130,7 @@ void LoadingScreen::load_song_hashes() {
                         }
                         for (const auto& [course, data] : parser.metadata.course_data) {
                             if (course >= 0 && course <= 4) {
-                                stamp.levels[course] = (int)data.level;
+                                stamp.levels[course] = static_cast<int>(data.level);
                             }
                         }
                         meta = stamp;
@@ -153,7 +151,7 @@ void LoadingScreen::load_song_hashes() {
                     scores_manager.add_path_binding(songs[i], hashes);
                     scores_manager.set_song_meta(path, meta);
 
-                    progress = (float)++songs_loaded / songs.size();
+                    progress = static_cast<float>(++songs_loaded) / songs.size();
                 } catch (const std::exception& e) {
                     spdlog::error("Failed to record song {}: {}", path, e.what());
                 }
@@ -268,15 +266,15 @@ std::optional<Screens> LoadingScreen::update() {
 }
 
 void LoadingScreen::draw() {
-    ray::DrawRectangle(0, 0, tex.screen_width, tex.screen_height, ray::BLACK);
+    draw_rectangle(0, 0, tex.screen_width, tex.screen_height, Color::BLACK);
 
-    ray::DrawRectangleRec(progress_bar, ray::Color(101, 0, 0, 255));
+    draw_rectangle(progress_bar, Color(101, 0, 0, 255));
 
     float clamped_progress = std::max(0.0f, std::min(1.0f, progress.load()));
-    ray::Rectangle fill = progress_bar;
+    Rect fill = progress_bar;
     fill.width *= clamped_progress;
     if (fill.width > 0) {
-        ray::DrawRectangleRec(fill, ray::RED);
+        draw_rectangle(fill, Color::RED);
     }
     tex.draw_texture(t_warning);
 
@@ -292,7 +290,7 @@ void LoadingScreen::draw() {
         }
     }
 
-    ray::DrawRectangle(0, 0, tex.screen_width, tex.screen_height, ray::Fade(ray::WHITE, fade_in->attribute));
+    draw_rectangle(0, 0, tex.screen_width, tex.screen_height, fade(Color::WHITE, fade_in->attribute));
     if (allnet_indicator) {
         allnet_indicator->draw();
     }

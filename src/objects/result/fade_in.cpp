@@ -1,7 +1,7 @@
 #include "fade_in.h"
 
 FadeIn::FadeIn(PlayerNum player_num) {
-    if (!load("ResultFadeIn", "result_fade_in", (int)player_num)) {
+    if (!load("ResultFadeIn", "result_fade_in", static_cast<int>(player_num))) {
         return;
     }
     fn_update = lua_object["update"];

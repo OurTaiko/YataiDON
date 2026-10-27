@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 
-#include "../libs/input.h"
+#include "../libs/input/input.h"
 
 void SongSelect2PScreen::on_screen_start() {
     SongSelectScreen::on_screen_start();
@@ -66,22 +66,24 @@ void SongSelect2PScreen::handle_input_selecting() {
 void SongSelect2PScreen::select_song(SongBox* song) {
     navigator.add_to_recent(song);
 
-    auto& sd1 = global_data.session_data[(int)PlayerNum::P1];
+    const auto p1_index = static_cast<int>(PlayerNum::P1);
+    auto& sd1 = global_data.session_data[p1_index];
     sd1.selected_song = song->path;
-    sd1.selected_difficulty = (int)player->selected_difficulty;
+    sd1.selected_difficulty = static_cast<int>(player->selected_difficulty);
     sd1.song_hash = song->hash_for(sd1.selected_difficulty);
-    sd1.genre_index = std::max(0, (int)song->song_genre_index - 1);
+    sd1.genre_index = std::max(0, static_cast<int>(song->song_genre_index) - 1);
     sd1.genre_label = song->song_genre_label;
 
-    auto& sd2 = global_data.session_data[(int)PlayerNum::P2];
+    const auto p2_index = static_cast<int>(PlayerNum::P2);
+    auto& sd2 = global_data.session_data[p2_index];
     sd2.selected_song = song->path;
-    sd2.selected_difficulty = (int)player_2->selected_difficulty;
+    sd2.selected_difficulty = static_cast<int>(player_2->selected_difficulty);
     sd2.song_hash = song->hash_for(sd2.selected_difficulty);
-    sd2.genre_index = std::max(0, (int)song->song_genre_index - 1);
+    sd2.genre_index = std::max(0, static_cast<int>(song->song_genre_index) - 1);
     sd2.genre_label = song->song_genre_label;
 
-    global_data.last_difficulty[(int)PlayerNum::P1] = sd1.selected_difficulty;
-    global_data.last_difficulty[(int)PlayerNum::P2] = sd2.selected_difficulty;
+    global_data.last_difficulty[p1_index] = sd1.selected_difficulty;
+    global_data.last_difficulty[p2_index] = sd2.selected_difficulty;
 
     game_transition.emplace(song->text_name, song->text_subtitle, false);
     if (exists(sd1.selected_song.parent_path() / "Loading.png")) {
@@ -103,13 +105,13 @@ std::optional<Screens> SongSelect2PScreen::update() {
     player->update(current_time);
     player_2->update(current_time);
 
-    if (player->is_ready && player_2->is_ready && !game_transition.has_value()) {
-        if (player->selected_difficulty >= Difficulty::EASY && player_2->selected_difficulty >= Difficulty::EASY) {
-            if (auto* item = dynamic_cast<SongBox*>(navigator.get_current_item())) {
-                select_song(item);
-            }
+    if (player->is_ready && player_2->is_ready && !game_transition.has_value() &&
+        player->selected_difficulty >= Difficulty::EASY && player_2->selected_difficulty >= Difficulty::EASY) {
+        if (auto* item = dynamic_cast<SongBox*>(navigator.get_current_item())) {
+            select_song(item);
         }
     }
+
     if (!game_transition.has_value() && ((player->is_ready && player->selected_difficulty == Difficulty::BACK) ||
                                          (player_2->is_ready && player_2->selected_difficulty == Difficulty::BACK))) {
         navigator.exit_diff_select();

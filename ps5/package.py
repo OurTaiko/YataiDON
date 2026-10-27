@@ -30,9 +30,9 @@ def main():
     template = args.template.resolve()
     sdk = Path(os.environ["PS5_PAYLOAD_SDK"]).resolve()
     ffmpeg = Path(os.environ["PS5_FFMPEG_PREFIX"]).resolve()
-    prefix = Path(os.environ.get("PS5_OPENGL_PREFIX", ROOT / "vendor/opengl-sdk/ps5-opengl-sdk-1.0.2/sdk")).resolve()
-    graphics = ROOT / "vendor/ps5-opengl"
-    build = ROOT / "build-game"
+    prefix = Path(os.environ["PS5_VULKAN_PREFIX"]).resolve()
+    stub_prefix = Path(os.environ.get("PS5_VULKAN_STUBS", ROOT / "build-vulkan")).resolve()
+    build = ROOT / "build-vulkan"
     stage = ROOT / "package"
     app = ROOT / "dist/PPSA99329"
     for directory in (stage / "tooling/native", stage / "objects", app / "sce_sys", app / "sce_module"):
@@ -53,7 +53,7 @@ def main():
     # Preserve upstream linker-layout license and provide the graphics EH bounds.
     shutil.copy2(upstream_native / "ps5-pie.ld", stage / "tooling/native/ps5-pie-base.ld")
     for name in ("ps5-pie.ld", "app-symbols.map"):
-        shutil.copy2(graphics / "native-app" / name, stage / "tooling/native" / name)
+        shutil.copy2(ROOT / "runtime" / name, stage / "tooling/native" / name)
     host_tool = stage / "ps5-native-tool"
     zlib = template / ".deps/native/zlib/root/usr"
     tool_stamp = stage / "tool-inputs.sha256"
@@ -67,29 +67,26 @@ def main():
     if args.tools_only:
         return
     sources = [(native / "app_crt.cpp", "crt.o"),
-               (graphics / "native-app/app_heap.c", "heap.o"),
-               (ROOT / "native-thread-cleanup.c", "thread-cleanup.o"),
                (ROOT / "native-filesystem.c", "filesystem.o"),
                (ROOT / "native-memory.c", "memory.o"),
                (ROOT / "native-directory.c", "directory.o")]
     sources.append((ROOT / "native-display.c", "display.o"))
     # Keep logs in the writable data folder, without the diagnostic's return hold.
-    shims = (graphics / "native-app/runtime_shims.c").read_text()
+    shims = (ROOT / "runtime/runtime_shims.c").read_text()
     start = shims.index("__attribute__((noreturn)) void catchReturnFromMain")
     end = shims.index("__attribute__((noreturn)) void __assert", start)
     shims = "#include <sys/stat.h>\n" + shims[:start] + shims[end:]
     shims = shims.replace("static void ps5_opengl_open_log(void) {",
                           "static void ps5_opengl_open_log(void) {\n  (void)mkdir(\"/data/YataiDON\", 0777);")
     shims = shims.replace("setvbuf(stream, NULL, _IONBF, 0);\n}",
-                          "setvbuf(stream, NULL, _IONBF, 0);\n  fprintf(stderr, \"[yataidon-ps5] hardware-video-v4\\n\");\n}")
+                          "setvbuf(stream, NULL, _IONBF, 0);\n  fprintf(stderr, \"[yataidon-ps5] bgfx-vulkan-v1\\n\");\n}")
     shims = shims.replace("setvbuf(stream, NULL, _IONBF, 0);", "setvbuf(stream, NULL, _IOLBF, 65536);")
     # Prefer the complete payload SDK implementations when its libc archive
     # also supplies these diagnostic fallback functions.
     for declaration in ("int mkstemps(", "void openlog(", "FILE *popen(", "int pclose("):
         shims = shims.replace(declaration, "__attribute__((weak)) " + declaration)
     (stage / "runtime.c").write_text(shims.replace("/download0/ps5-opengl.log", "/data/YataiDON/native.log"))
-    (stage / "budget.c").write_text("#include <stddef.h>\nconst size_t ps5_opengl_heap_size = 512u * 1024u * 1024u;\n")
-    sources.extend([(stage / "runtime.c", "runtime.o"), (stage / "budget.c", "budget.o")])
+    sources.append((stage / "runtime.c", "runtime.o"))
     objects = []
     for source, name in sources:
         output = stage / "objects" / name
@@ -99,7 +96,7 @@ def main():
     archives = [Path(line) for line in (build / "native-archives.txt").read_text().splitlines()]
     archives.extend(ffmpeg / f"lib/lib{name}.a" for name in ("avformat", "avcodec", "swscale", "swresample", "avutil", "opus"))
     archives.extend(sdk / f"target/lib/{name}.a" for name in ("libc++", "libc++abi", "libc++experimental", "libunwind", "libc", "libpthread", "libdl", "libps5platform"))
-    archives.append(prefix / "lib/libPS5OpenGL.a")
+
     resource = subprocess.check_output([str(sdk / "bin/prospero-clang"), "--print-resource-dir"], text=True).strip()
     archives.append(Path(resource) / "lib/linux/libclang_rt.builtins-x86_64.a")
     for path in archives:
@@ -110,27 +107,47 @@ def main():
         symbols = (ffmpeg / f"lib/lib{library}.a").read_bytes()
         if any(symbol not in symbols for symbol in required):
             raise RuntimeError("FFmpeg needs MP4/MOV, H.264 and AAC support; run ps5/build-ffmpeg.sh")
+    # RADV needs libc operations absent from native title import libraries.
+    # Bind only SDK-provided implementations; preserve this port's filesystem wrappers.
+    symbols = subprocess.check_output([str(sdk / "bin/llvm-nm"), "--defined-only",
+                                       str(sdk / "target/lib/libps5platform.a")], text=True)
+    available = {line.split()[-1] for line in symbols.splitlines() if len(line.split()) >= 3}
+    names = """qsort_r open_memstream __xuname __memset_chk regcomp regexec regfree regerror
+        localtime_r newlocale freelocale strtod_l strtof_l dladdr utimensat localeconv_l
+        strtoll_l strtoull_l strtold_l snprintf_l sscanf_l asprintf_l strcoll_l strxfrm_l
+        strftime_l wcscoll_l wcsxfrm_l btowc_l wctob_l iswctype_l mbrlen_l mbrtowc_l
+        mbsrtowcs_l mbsnrtowcs_l wcrtomb_l wcsnrtombs_l mbtowc_l ___mb_cur_max_l
+        ___runetype_l ___tolower_l ___toupper_l __runes_for_locale catopen catgets catclose
+        backtrace backtrace_symbols_fd __cxa_thread_atexit_impl localeconv arc4random
+        arc4random_buf arc4random_uniform gmtime_r statvfs fstatvfs futimens clock_nanosleep
+        getaddrinfo freeaddrinfo if_nameindex if_freenameindex nl_langinfo nl_langinfo_l
+        getpwuid_r posix_fallocate openat unlinkat fchmodat fstatat mkdirat renameat
+        memfd_create strcasestr mkstemp readlink link symlink""".split()
+    sdk_aliases = [f"--defsym={name}=ps5_{name}" for name in names if f"ps5_{name}" in available]
     intermediate = stage / "game.elf"
-    gl_stubs = [prefix / f"lib/{name}.so" for name in ("libSceAgc", "libSceAgcDriver")]
-    gl_stubs.append(build / "libSceVideodec2.so")
+    import_stubs = [stub_prefix / f"{name}.so" for name in ("libSceAgc", "libSceAgcDriver")]
+    import_stubs.append(build / "libSceVideodec2.so")
     run(sdk / "bin/prospero-lld", "-T", "tooling/native/ps5-pie.ld", "--eh-frame-hdr",
         "--no-dynamic-linker",
         "--version-script", "tooling/native/app-symbols.map", "--exclude-libs=ALL",
         *[f"--wrap={name}" for name in ("malloc", "calloc", "realloc", "free", "posix_memalign", "malloc_usable_size", "stat", "lstat", "fstat",
                                        "fopen", "freopen", "open", "opendir", "mkdir", "unlink", "rmdir", "remove", "rename", "access", "realpath", "getcwd", "chdir",
                                        "mmap", "munmap", "mprotect", "pathconf", "readdir", "closedir", "dirfd", "fdopendir",
-                                       "sceVideoOutOpen", "sceVideoOutClose")],
-        "-L", prefix / "lib", "-L", sdk / "target/lib", "-u", "ps5_agc_gate2_run",
+                                       "sceVideoOutOpen", "sceVideoOutClose", "pthread_create", "pthread_join", "pthread_detach",
+                                       "fclose", "fflush", "aligned_alloc", "memalign", "reallocf", "reallocarray", "getline", "getdelim")],
+        *sdk_aliases,
+        "-L", sdk / "target/lib",
         "-e", "_start", "-o", intermediate, *objects,
-        "--start-group", *archives, "--end-group", "--as-needed", *gl_stubs,
+        "--whole-archive", prefix / "lib/libvulkan_radeon.ps5.a", "--no-whole-archive",
+        "--start-group", *archives, "--end-group", "--as-needed", *import_stubs,
         *sorted((sdk / "target/lib").glob("*.so")), cwd=stage)
     elf = stage / "eboot.elf"
     run(host_tool, "link", "--in", intermediate, "--out", elf,
-        "--stub-dir", sdk / "target/lib", "--stub", gl_stubs[0], "--stub", gl_stubs[1], "--stub", gl_stubs[2],
+        "--stub-dir", sdk / "target/lib", "--stub", import_stubs[0], "--stub", import_stubs[1], "--stub", import_stubs[2],
         "--module-sdk", "0x02000009", "--companion-sdk", "0x08050001", "--file-name", "eboot.elf")
     run(host_tool, "self", "--sign", "--in", elf, "--out", app / "eboot.bin", "--magic", "0x1D3D154F")
     shutil.copy2(runtime, app / "sce_module/libc.prx")
-    param = json.loads((graphics / "native-app/param.json").read_text())
+    param = json.loads((ROOT / "runtime/param.json").read_text())
     param.update(titleId="PPSA99329", conceptId="99329", contentId="UP9000-PPSA99329_00-YATAIDON00000001", contentVersion="01.000.005")
     # The shell rejects high-refresh ConfigureOutput requests without both
     # capability bits, even when the HDMI sink reports 120 Hz support.
@@ -155,7 +172,8 @@ def main():
         "YataiDON PS5 - experimental, not hardware tested\n\n"
         "Install/register PPSA99329 using your native homebrew folder-app workflow.\n"
         "Copy data/YataiDON to /data/YataiDON on the console.\n"
-        "This source checkout may contain empty skin submodules. Add a complete\n"
+        "This build uses bgfx/Vulkan; 3D models are not implemented upstream yet.\n"
+        "Add a complete\n"
         "skin and its parent dependencies under /data/YataiDON/Skins before playing.\n"
         "Configuration, scores and logs are written under /data/YataiDON.\n"
         "Online services, automatic skin downloads, MIDI and webcam are disabled.\n"
@@ -163,7 +181,8 @@ def main():
     run(host_tool, "self", "--inspect", "--file", app / "eboot.bin")
     receipt = {"hardware_tested": False, "title_id": "PPSA99329",
                "runtime_sha256": digest(runtime),
-               "graphics_manifest_sha256": digest(prefix / "manifest.sha256"),
+               "graphics_backend": "bgfx-vulkan",
+                "vulkan_archive_sha256": digest(prefix / "lib/libvulkan_radeon.ps5.a"),
                "game_archive_sha256": digest(build / "libyataidon_ps5_game.a"),
                "ffmpeg_sha256": {name: digest(ffmpeg / f"lib/lib{name}.a")
                                   for name in ("avformat", "avcodec", "swscale", "swresample", "avutil", "opus")},
@@ -172,12 +191,16 @@ def main():
     licenses = ROOT / "dist/LICENSES"
     licenses.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT.parent / "LICENSE", licenses / "YataiDON-GPL-3.0.txt")
-    shutil.copy2(graphics / "LICENSE", licenses / "PS5-OpenGL-GPL-3.0.txt")
+    shutil.copy2(ROOT.parent / "LICENSE", licenses / "Runtime-GPL-3.0.txt")
     for dependency in (ROOT / "vendor").iterdir():
         if dependency.is_dir():
             for license_file in dependency.iterdir():
                 if license_file.is_file() and license_file.name.upper().startswith(("LICENSE", "COPYING")):
                     shutil.copy2(license_file, licenses / f"{dependency.name}-{license_file.name}")
+    shutil.copytree(ROOT / "runtime/licenses", licenses, dirs_exist_ok=True)
+    for dependency in ("bgfx", "bx", "bimg"):
+        shutil.copy2(ROOT / "vendor/bgfx.cmake" / dependency / "LICENSE",
+                     licenses / f"{dependency}-LICENSE")
     bundle = ROOT / "dist/YataiDON-PS5-experimental.zip"
     with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as output:
         directories = (app, data / "shader", licenses) if args.skip_media else (app, data, licenses)

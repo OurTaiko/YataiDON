@@ -2,8 +2,8 @@
 
 #include <algorithm>
 
-#include "../libs/animation.h"
-#include "../libs/input.h"
+#include "../libs/input/input.h"
+#include "../libs/math/animation.h"
 
 void Game2PScreen::release_chart_resources() {
     parser_2p.reset();
@@ -21,11 +21,15 @@ void Game2PScreen::initialize_chart(const fs::path& song) {
 
     load_song_audio(AudioLoadMode::Sync);
 
+    const auto p1_index = static_cast<int>(PlayerNum::P1);
+    const auto p2_index = static_cast<int>(PlayerNum::P2);
+
     players.push_back(std::make_unique<Player>(parser, PlayerNum::P1,
-                                               global_data.session_data[(int)PlayerNum::P1].selected_difficulty, false,
+                                               global_data.session_data[p1_index].selected_difficulty, false,
                                                get_player_modifiers(PlayerNum::P1)));
+
     players.push_back(std::make_unique<Player>(parser_2p, PlayerNum::P2,
-                                               global_data.session_data[(int)PlayerNum::P2].selected_difficulty, true,
+                                               global_data.session_data[p2_index].selected_difficulty, true,
                                                get_player_modifiers(PlayerNum::P2)));
 
     players[0]->kusudama_partner = players[1].get();

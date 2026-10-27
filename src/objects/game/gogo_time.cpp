@@ -14,8 +14,8 @@ GogoTime::GogoTime() {
 
     int change_anim = 25;
     if (const SkinInfo* a = tex.get_skin_config(SC::GAME_GOGO_FIRE_ANIM);
-        a && a->x > 0 && tex.has_animation((int)a->x)) {
-        change_anim = (int)a->x;
+        a && a->x > 0 && tex.has_animation(static_cast<int>(a->x))) {
+        change_anim = static_cast<int>(a->x);
     }
     if (!tex.has_animation(change_anim)) {
         throw std::runtime_error("gogo time: animation " + std::to_string(change_anim) + " is missing");
@@ -26,7 +26,7 @@ GogoTime::GogoTime() {
     }
     fire_fade = 0.5f;
     if (const SkinInfo* f = tex.get_skin_config(SC::GAME_GOGO_FIRE_FADE); f && f->x > 0) {
-        fire_fade = std::clamp((float)f->x, 0.0f, 1.0f);
+        fire_fade = std::clamp(f->x, 0.0f, 1.0f);
     }
 
     fire_resize->start();
@@ -56,11 +56,11 @@ void GogoTime::update(double current_ms) {
 void GogoTime::draw(float judge_x, float judge_y) {
     if (lane_resize && t_lane_effect) {
         // grow vertically only: shrink height by (1-s), shift down half of that to stay centered
-        float cut = t_lane_effect->y2[0] * (1.0f - (float)lane_resize->attribute);
+        float cut = t_lane_effect->y2[0] * (1.0f - static_cast<float>(lane_resize->attribute));
         tex.draw_texture(t_lane_effect, {.y = judge_y + cut / 2, .y2 = -cut, .fade = 0.5});
     }
-    tex.draw_texture(t_fire, {.frame = (int)fire_change->attribute,
-                              .scale = (float)(fire_resize->attribute),
+    tex.draw_texture(t_fire, {.frame = static_cast<int>(fire_change->attribute),
+                              .scale = static_cast<float>(fire_resize->attribute),
                               .center = true,
                               .x = judge_x,
                               .y = judge_y,

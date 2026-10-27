@@ -6,7 +6,7 @@
 #include "../enums.h"
 #include "../song_select/file_navigator/color_utils.h"
 
-static const ray::Color GENRE_PLATE_TEMPLATE_COLOR{60, 103, 0, 255};
+static const Color GENRE_PLATE_TEMPLATE_COLOR{60, 103, 0, 255};
 
 static float skin_outline(const SkinInfo& s) {
     return s.outline >= 0 ? s.outline : 5.0f;
@@ -17,11 +17,12 @@ SongInfo::SongInfo(const std::string& song_name, const std::string& subtitle, bo
     : song_name(song_name), genre(genre >= 0 && genre < 9 ? genre : 0) {
 
     song_title =
-        std::make_unique<OutlinedText>(song_name, tex.get_skin_config(SC::GAME_SONG_INFO)->font_size, ray::WHITE,
-                                       ray::BLACK, false, skin_outline(*tex.get_skin_config(SC::GAME_SONG_INFO)));
+        std::make_unique<OutlinedText>(song_name, tex.get_skin_config(SC::GAME_SONG_INFO)->font_size, Color::WHITE,
+                                       Color::BLACK, false, skin_outline(*tex.get_skin_config(SC::GAME_SONG_INFO)));
     if (show_subtitle && !subtitle.empty()) {
-        song_subtitle = std::make_unique<OutlinedText>(
-            subtitle, tex.get_skin_config(SC::GAME_SONG_INFO_SUBTITLE)->font_size, ray::WHITE, ray::BLACK, false, 5);
+        song_subtitle =
+            std::make_unique<OutlinedText>(subtitle, tex.get_skin_config(SC::GAME_SONG_INFO_SUBTITLE)->font_size,
+                                           Color::WHITE, Color::BLACK, false, 5);
     }
     const SkinInfo* plate_cfg = tex.get_skin_config(SC::SONG_NUM_GAME);
     this->song_num = std::make_unique<SongNum>(song_num, plate_cfg ? plate_cfg->outline : -1.0f);
@@ -38,13 +39,12 @@ SongInfo::SongInfo(const std::string& song_name, const std::string& subtitle, bo
         tex.has_texture("song_info/song_num_plate") ? tex.get_texture("song_info/song_num_plate") : nullptr;
 
     int font_size = 18 * tex.screen_scale;
-    genre_text = std::make_unique<OutlinedText>(genre_label, font_size, ray::WHITE, ray::BLANK, false, 3, 1);
+    genre_text = std::make_unique<OutlinedText>(genre_label, font_size, Color::WHITE, Color::BLANK, false, 3, 1);
 
     GenreIndex genre_bucket = this->genre < 8 ? static_cast<GenreIndex>(this->genre + 1) : GenreIndex::DEFAULT;
     auto color_it = DEFAULT_COLORS.find(genre_bucket);
-    ray::Color target = (color_it != DEFAULT_COLORS.end() && color_it->second[1].has_value())
-                            ? color_it->second[1].value()
-                            : ray::Color{101, 0, 82, 255};
+    Color target = (color_it != DEFAULT_COLORS.end() && color_it->second[1].has_value()) ? color_it->second[1].value()
+                                                                                         : Color{101, 0, 82, 255};
 
     genre_shader = load_shader("shader/dummy.vs", "shader/colortransform.fs");
     genre_shader_loaded = genre_shader.id != 0;
@@ -52,10 +52,8 @@ SongInfo::SongInfo(const std::string& song_name, const std::string& subtitle, bo
         float src[3] = {GENRE_PLATE_TEMPLATE_COLOR.r / 255.0f, GENRE_PLATE_TEMPLATE_COLOR.g / 255.0f,
                         GENRE_PLATE_TEMPLATE_COLOR.b / 255.0f};
         float tgt[3] = {target.r / 255.0f, target.g / 255.0f, target.b / 255.0f};
-        ray::SetShaderValue(genre_shader, ray::GetShaderLocation(genre_shader, "sourceColor"), src,
-                            ray::SHADER_UNIFORM_VEC3);
-        ray::SetShaderValue(genre_shader, ray::GetShaderLocation(genre_shader, "targetColor"), tgt,
-                            ray::SHADER_UNIFORM_VEC3);
+        set_shader_value(genre_shader, get_shader_location(genre_shader, "sourceColor"), src, shader_uniform::VEC3);
+        set_shader_value(genre_shader, get_shader_location(genre_shader, "targetColor"), tgt, shader_uniform::VEC3);
     }
 }
 
@@ -71,7 +69,7 @@ SongInfo::SongInfo(SongInfo&& other) noexcept
 SongInfo& SongInfo::operator=(SongInfo&& other) noexcept {
     if (this != &other) {
         if (genre_shader_loaded) {
-            ray::UnloadShader(genre_shader);
+            unload_shader(genre_shader);
         }
         song_name = std::move(other.song_name);
         genre = other.genre;
@@ -92,7 +90,7 @@ SongInfo& SongInfo::operator=(SongInfo&& other) noexcept {
 
 SongInfo::~SongInfo() {
     if (genre_shader_loaded) {
-        ray::UnloadShader(genre_shader);
+        unload_shader(genre_shader);
     }
 }
 
@@ -112,28 +110,26 @@ void SongInfo::draw() {
     // Optional skin key game_song_info_max_width: a longer title is squeezed horizontally to fit.
     float title_w = song_title->width;
     float title_x2 = 0.0f;
-    if (const SkinInfo* m = tex.get_skin_config(SC::GAME_SONG_INFO_MAX_WIDTH)) {
-        if (m->width > 0 && title_w > m->width) {
-            title_x2 = m->width - title_w;
-            title_w = m->width;
-        }
+    if (const SkinInfo* m = tex.get_skin_config(SC::GAME_SONG_INFO_MAX_WIDTH);
+        m && m->width > 0 && title_w > m->width) {
+        title_x2 = m->width - title_w;
+        title_w = m->width;
     }
+
     float title_x = text_x - title_w;
-    if (const SkinInfo* c = tex.get_skin_config(SC::GAME_SONG_INFO_CENTER)) {
-        if (c->width > 0 && title_w <= c->width) {
-            title_x = c->x - title_w / 2.0f;
-        }
+    if (const SkinInfo* c = tex.get_skin_config(SC::GAME_SONG_INFO_CENTER); c && c->width > 0 && title_w <= c->width) {
+        title_x = c->x - title_w / 2.0f;
     }
 
     if (const SkinInfo* plate = tex.get_skin_config(SC::SONG_NUM_GAME)) {
         song_title->draw({.x = title_x, .y = text_y, .x2 = title_x2, .fade = 1 - fade->attribute});
         if (genre_text && t_genre) {
             if (genre_shader_loaded) {
-                ray::BeginShaderMode(genre_shader);
+                begin_shader_mode(genre_shader);
             }
             tex.draw_texture(t_genre, {.fade = 1 - fade->attribute});
             if (genre_shader_loaded) {
-                ray::EndShaderMode();
+                end_shader_mode();
             }
             genre_text->draw({.x = t_genre->x[0] + t_genre->width / 2.0f - genre_text->width / 2.0f,
                               .y = t_genre->y[0] + t_genre->height / 2.0f - genre_text->height / 2.0f,
@@ -161,11 +157,11 @@ void SongInfo::draw() {
     if (genre_text && t_genre) {
         float genre_y_offset = song_subtitle ? song_subtitle->height : 0;
         if (genre_shader_loaded) {
-            ray::BeginShaderMode(genre_shader);
+            begin_shader_mode(genre_shader);
         }
         tex.draw_texture(t_genre, {.y = genre_y_offset, .fade = 1 - fade->attribute});
         if (genre_shader_loaded) {
-            ray::EndShaderMode();
+            end_shader_mode();
         }
         genre_text->draw({.x = t_genre->x[0] + t_genre->width / 2.0f - genre_text->width / 2.0f,
                           .y = t_genre->y[0] + genre_y_offset + t_genre->height / 2.0f - genre_text->height / 2.0f,
@@ -183,13 +179,13 @@ SongNum::SongNum(int song_num, float outline_override) {
     if (pos != std::string::npos) {
         song_format.replace(pos, 3, std::to_string(song_num));
     }
-    ray::Color outline_color;
+    Color outline_color;
     if (global_data.config->limits.song_limit > 0 && global_data.config->limits.song_limit == song_num) {
-        outline_color = ray::RED;
+        outline_color = Color::RED;
     } else {
-        outline_color = ray::BLACK;
+        outline_color = Color::BLACK;
     }
-    text = std::make_unique<OutlinedText>(song_format, cfg.font_size, ray::WHITE, outline_color, false,
+    text = std::make_unique<OutlinedText>(song_format, cfg.font_size, Color::WHITE, outline_color, false,
                                           outline_override >= 0 ? outline_override : skin_outline(cfg));
     width = text->width;
     height = text->height;
@@ -208,7 +204,7 @@ SongNum::SongNum(int value, SC key, const std::string& config_key) {
     if (pos != std::string::npos) {
         fmt.replace(pos, 3, std::to_string(value));
     }
-    text = std::make_unique<OutlinedText>(fmt, cfg->font_size, ray::WHITE, ray::BLACK, false, skin_outline(*cfg));
+    text = std::make_unique<OutlinedText>(fmt, cfg->font_size, Color::WHITE, Color::BLACK, false, skin_outline(*cfg));
     width = text->width;
     height = text->height;
 }

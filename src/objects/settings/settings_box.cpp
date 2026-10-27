@@ -1,10 +1,12 @@
 #include "settings_box.h"
 
+#include <iterator>
 #include <stdexcept>
+#include <utility>
 
-#include "../../libs/audio.h"
-#include "../../libs/filesystem.h"
-#include "../../libs/input.h"
+#include "../../libs/audio/audio.h"
+#include "../../libs/file/filesystem.h"
+#include "../../libs/input/input.h"
 
 std::unique_ptr<BaseOptionBox> SettingsBox::make_option_box(const rapidjson::Value& opt) {
     if (!opt.HasMember("type") || !opt["type"].IsString() || !opt.HasMember("path") || !opt["path"].IsString()) {
@@ -96,10 +98,10 @@ static float box_step() {
     return BOX_STEP_BASE * tex.screen_scale;
 }
 
-SettingsBox::SettingsBox(const std::string& name, const std::string& label_text, const rapidjson::Value& options_json)
-    : box_name(name),
-      label(std::make_unique<OutlinedText>(label_text, (int)(LABEL_FONT_SIZE_BASE * tex.screen_scale), ray::WHITE,
-                                           ray::Color{109, 68, 24, 255}, false, LABEL_OUTLINE_BASE)),
+SettingsBox::SettingsBox(std::string name, const std::string& label_text, const rapidjson::Value& options_json)
+    : box_name(std::move(name)),
+      label(std::make_unique<OutlinedText>(label_text, static_cast<int>(LABEL_FONT_SIZE_BASE * tex.screen_scale),
+                                           Color::WHITE, Color{109, 68, 24, 255}, false, LABEL_OUTLINE_BASE)),
       x(10.0f * tex.screen_scale), y(wrap_top()), start_position(wrap_top()),
       wrap_bottom(wrap_top()) // corrected by set_box_count() once the manager knows the total
       ,
@@ -201,7 +203,7 @@ void SettingsBox::move_option_right() {
     if (options[option_index]->is_highlighted) {
         options[option_index]->move_right();
     } else {
-        option_index = std::min(option_index + 1, (int)options.size() - 1);
+        option_index = std::min(option_index + 1, static_cast<int>(options.size()) - 1);
     }
 }
 
@@ -261,7 +263,7 @@ void SettingsBox::draw_text() const {
     if (is_selected) {
         label->draw({.x = text_x, .y = text_y});
     } else if (box_name == "exit") {
-        label->draw({.color = ray::RED, .x = text_x, .y = text_y});
+        label->draw({.color = Color::RED, .x = text_x, .y = text_y});
     } else {
         label->draw({.x = text_x, .y = text_y});
     }
@@ -275,11 +277,12 @@ void SettingsBox::draw() {
     if (in_box && !options.empty()) {
         options[option_index]->draw();
         if (!options[option_index]->is_highlighted) {
-            tex.draw_texture(t_blue_arrow,
-                             {.x = -(float)blue_arrow_move->attribute, .fade = blue_arrow_fade->attribute, .index = 0});
-            if (option_index != (int)options.size() - 1) {
+            tex.draw_texture(
+                t_blue_arrow,
+                {.x = -static_cast<float>(blue_arrow_move->attribute), .fade = blue_arrow_fade->attribute, .index = 0});
+            if (option_index != std::ssize(options) - 1) {
                 tex.draw_texture(t_blue_arrow, {.mirror = Mirror::HORIZONTAL,
-                                                .x = (float)blue_arrow_move->attribute,
+                                                .x = static_cast<float>(blue_arrow_move->attribute),
                                                 .fade = blue_arrow_fade->attribute,
                                                 .index = 1});
             }

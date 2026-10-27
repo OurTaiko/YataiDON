@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../libs/gfx/color_utils.h"
 #include "../libs/screen.h"
 #include "../objects/game/song_info.h"
 #include "../objects/game/transition.h"
@@ -32,8 +33,8 @@ protected:
     Statistics cached_stats;
     std::future<Statistics> stats_future;
 
-    ray::Shader shader;
-    ray::Color color;
+    Shader shader;
+    Color color;
     std::unique_ptr<SongNum> song_num;
 
     std::unique_ptr<SongSelectPlayer> player;

@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../../libs/file/script.h"
 #include "../../libs/global_data.h"
-#include "../../libs/script.h"
 
 // The score on the lane cover plus the points that pop up as they are earned. The skin's
 // ScoreCounter (game/score_counter.lua) owns the animations and the drawing.
@@ -11,7 +11,7 @@ private:
 
 public:
     ScoreCounter(bool is_2p, PlayerNum player_num) {
-        if (!load("ScoreCounter", "score_counter", is_2p, (int)player_num)) {
+        if (!load("ScoreCounter", "score_counter", is_2p, static_cast<int>(player_num))) {
             return;
         }
         fn_update = lua_object["update"];

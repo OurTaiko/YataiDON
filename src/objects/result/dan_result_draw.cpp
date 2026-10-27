@@ -18,7 +18,7 @@ namespace {
         t["max_combo"] = rd.max_combo;
         t["odai_result"] = rd.odai_result;
         t["skipped"] = rd.skipped;
-        t["player_num"] = (int)global_data.player_num;
+        t["player_num"] = static_cast<int>(global_data.player_num);
 
         sol::table songs = lua.create_table();
         for (size_t i = 0; i < rd.songs.size(); i++) {

@@ -6,7 +6,7 @@ void Result2PScreen::on_screen_start() {
     ResultScreen::on_screen_start();
     allow_retry = false;
     if (loading_graphic.has_value()) {
-        ray::UnloadTexture(loading_graphic.value());
+        unload_texture(loading_graphic.value());
         loading_graphic.reset();
     }
     background.emplace(PlayerNum::TWO_PLAYER, tex.screen_width);

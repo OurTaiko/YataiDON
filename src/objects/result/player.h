@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../../libs/file/script.h"
 #include "../../libs/global_data.h"
-#include "../../libs/script.h"
 #include "../enums.h"
 #include "../global/chara_3d.h"
 #include "../global/nameplate.h"
@@ -19,7 +19,7 @@ class ResultPlayer : public LuaScript {
     std::optional<double> score_delay;
     int update_index = 0;
     std::vector<std::tuple<std::string, int>> update_list;
-    std::string score = "", good = "", ok = "", bad = "", max_combo = "", total_drumroll = "";
+    std::string score, good, ok, bad, max_combo, total_drumroll;
     std::optional<ScoreAnimator> score_animator;
     bool high_score_sound_played = false;
     bool miss_loop_started = false;

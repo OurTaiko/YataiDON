@@ -2,10 +2,10 @@
 
 #include <cmath>
 
-#include "../../libs/animation.h"
+#include "../../libs/file/script.h"
+#include "../../libs/gfx/texture.h"
 #include "../../libs/global_data.h"
-#include "../../libs/script.h"
-#include "../../libs/texture.h"
+#include "../../libs/math/animation.h"
 
 class Gauge : public LuaScript {
 public:
@@ -22,11 +22,11 @@ public:
     bool get_is_clear() const { return points >= clear_points; }
     bool get_is_rainbow() const { return points >= max_points; }
     bool is_dan() const { return dan_mode; }
-    float get_length() const { return (float)(points / max_points * 100); }
+    float get_length() const { return points / max_points * 100; }
 
     // exam threshold check: floor like the arcade and use POINTS_EPS to absorb
     // double accumulation. computed before any narrowing to float.
-    int get_percent() const { return (int)std::floor((points + POINTS_EPS) / max_points * 100.0); }
+    int get_percent() const { return static_cast<int>(std::floor((points + POINTS_EPS) / max_points * 100.0)); }
 
 private:
     bool lua_tried = false;

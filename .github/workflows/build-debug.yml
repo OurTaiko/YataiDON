@@ -16,7 +16,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+
+      - name: Clone skins
+        run: |
+          for s in PyTaikoGreen YataiDONRed YataiDONNijiiro; do
+            git clone --depth 1 https://ese.tjadataba.se/Yonokid/$s.git Skins/$s
+          done
 
       - name: Install dependencies
         env:
@@ -110,7 +116,7 @@ jobs:
           # Bundle transitive deps of FFmpeg AND sndfile codec libs
           for so in release/YataiDON-Linux/lib/lib{av,sw,ogg,vorbis,FLAC,opus,mp3lame,mpg123,speex}*.so*; do
             ldd "$so" 2>/dev/null | grep "=>" | awk '{print $3}' | grep -v "^$" | \
-              grep -vE "lib(c\.so|m\.so|dl\.so|rt\.so|pthread\.so|gcc_s\.so|stdc\+\+\.so|X11\.so|GL\.so|asound\.so|pulse\.so|jack\.so|Xi\.so|Xrandr\.so|xcb)" | \
+              grep -vE "lib(c\.so|m\.so|dl\.so|rt\.so|resolv\.so|nsl\.so|util\.so|anl\.so|pthread\.so|gcc_s\.so|stdc\+\+\.so|X11\.so|GL\.so|asound\.so|pulse\.so|jack\.so|Xi\.so|Xrandr\.so|xcb)" | \
               grep -v "ld-linux" | \
               xargs -I{} cp -L {} release/YataiDON-Linux/lib/ 2>/dev/null || true
           done
@@ -145,7 +151,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+
+      - name: Clone skins
+        run: |
+          for s in PyTaikoGreen YataiDONRed YataiDONNijiiro; do
+            git clone --depth 1 https://ese.tjadataba.se/Yonokid/$s.git Skins/$s
+          done
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -211,7 +223,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+
+      - name: Clone skins
+        run: |
+          for s in PyTaikoGreen YataiDONRed YataiDONNijiiro; do
+            git clone --depth 1 https://ese.tjadataba.se/Yonokid/$s.git Skins/$s
+          done
 
       - name: Install dependencies
         run: |

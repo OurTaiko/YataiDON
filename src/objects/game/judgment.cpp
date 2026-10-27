@@ -75,18 +75,13 @@ Judgment::Judgment(Judgments type, bool big) : type(type) {
 }
 
 void Judgment::update(double current_ms) {
-    BaseAnimation* animations[] = {fade_animation_1, fade_animation_2, fade_animation_3, move_animation,
-                                   texture_animation};
+    BaseAnimation* animations[] = {fade_animation_1,  fade_animation_2, fade_animation_3, move_animation,
+                                   texture_animation, outer_scale,      ray_scale,        ray_fade,
+                                   ray2_scale,        ray2_fade};
 
     for (auto& animation : animations) {
         if (animation) {
             animation->update(current_ms);
-        }
-    }
-    for (BaseAnimation* a : {(BaseAnimation*)outer_scale, (BaseAnimation*)ray_scale, (BaseAnimation*)ray_fade,
-                             (BaseAnimation*)ray2_scale, (BaseAnimation*)ray2_fade}) {
-        if (a) {
-            a->update(current_ms);
         }
     }
 }
@@ -106,26 +101,26 @@ void Judgment::draw_outer_effect(float judge_x, float judge_y) {
                                       .x = judge_x,
                                       .y = judge_y,
                                       .fade = hit_fade,
-                                      .blend = ray::BLEND_ADDITIVE});
+                                      .blend = blend_mode::ADDITIVE});
 }
 
 void Judgment::draw_ray_effect(float judge_x, float judge_y) {
     if (!t_ray) {
         return;
     }
-    tex.draw_texture(t_ray, {.scale = (float)ray_scale->attribute,
+    tex.draw_texture(t_ray, {.scale = static_cast<float>(ray_scale->attribute),
                              .center = true,
                              .x = judge_x,
                              .y = judge_y,
                              .fade = ray_fade->attribute,
-                             .blend = ray::BLEND_ADDITIVE});
+                             .blend = blend_mode::ADDITIVE});
     if (ray2_scale) {
-        tex.draw_texture(t_ray, {.scale = (float)ray2_scale->attribute,
+        tex.draw_texture(t_ray, {.scale = static_cast<float>(ray2_scale->attribute),
                                  .center = true,
                                  .x = judge_x,
                                  .y = judge_y,
                                  .fade = ray2_fade->attribute,
-                                 .blend = ray::BLEND_ADDITIVE});
+                                 .blend = blend_mode::ADDITIVE});
     }
 }
 

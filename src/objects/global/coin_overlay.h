@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 class CoinOverlay : public LuaScript {
     sol::protected_function fn_update;

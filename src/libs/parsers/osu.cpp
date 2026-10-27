@@ -4,8 +4,9 @@
 #include <cctype>
 #include <fstream>
 #include <sstream>
+#include <string_view>
 
-#include "../md5.h"
+#include "../math/md5.h"
 
 std::vector<std::string> OsuParser::read_file_lines(const fs::path& path) {
     std::vector<std::string> lines;
@@ -83,7 +84,7 @@ std::vector<std::vector<double>> OsuParser::read_section_list(const std::vector<
             continue;
         }
         // only parse lines that start with a digit or sign
-        if (!std::isdigit((unsigned char)line[0]) && line[0] != '-' && line[0] != '+') {
+        if (!std::isdigit(static_cast<unsigned char>(line[0])) && line[0] != '-' && line[0] != '+') {
             continue;
         }
         std::vector<double> nums;
@@ -121,7 +122,7 @@ std::vector<std::vector<std::string>> OsuParser::read_hitobjects_fields(const st
         if (line.empty() || line[0] == '/' || line[0] == '\r') {
             continue;
         }
-        if (!std::isdigit((unsigned char)line[0]) && line[0] != '-' && line[0] != '+') {
+        if (!std::isdigit(static_cast<unsigned char>(line[0])) && line[0] != '-' && line[0] != '+') {
             continue;
         }
         std::vector<std::string> fields;
@@ -264,6 +265,9 @@ OsuParser::OsuParser(const fs::path& path) : file_path(path) {
         }
         // Look for video or background: "Video,offset,"filename"" or "0,0,"filename""
         static const std::regex bg_re(R"re(^\s*(?:Video|\d+),\d+,"([^"]+)")re");
+        static constexpr std::string_view video_extensions[] = {".mp4", ".avi", ".mkv", ".mov", ".flv"};
+        static constexpr std::string_view image_extensions[] = {".jpg", ".jpeg", ".png", ".bmp"};
+
         std::istringstream ss(full_text);
         std::string el;
         while (std::getline(ss, el)) {
@@ -271,13 +275,14 @@ OsuParser::OsuParser(const fs::path& path) : file_path(path) {
             if (std::regex_search(el, m, bg_re)) {
                 fs::path candidate = path.parent_path() / m[1].str();
                 std::string ext = candidate.extension().string();
-                std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-                if (ext == ".mp4" || ext == ".avi" || ext == ".mkv" || ext == ".mov" || ext == ".flv") {
+                std::ranges::transform(ext, ext.begin(),
+                                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (std::ranges::contains(video_extensions, ext)) {
                     metadata.bgmovie = candidate;
                     break;
                 }
 
-                if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".bmp") {
+                if (std::ranges::contains(image_extensions, ext)) {
                     metadata.preimage = candidate;
                     break;
                 }

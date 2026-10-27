@@ -2,7 +2,7 @@
 #include <optional>
 #include <utility>
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 class EntryScript : public LuaScript {
 private:

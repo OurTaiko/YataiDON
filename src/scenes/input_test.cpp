@@ -1,6 +1,6 @@
 #include "input_test.h"
 
-#include "../libs/input.h"
+#include "../libs/input/input.h"
 
 void InputTestScreen::on_screen_start() {
     // Loads the screen's sounds (don/kat come from the skin root), which the

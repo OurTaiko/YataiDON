@@ -4,23 +4,21 @@
 #include <climits>
 #include <tuple>
 
-#include "../../libs/text.h"
+#include "../../libs/gfx/text.h"
 #ifdef SUPPORT_FUMEN
 #include "../../libs/optional/gen3.h"
 #include "../../libs/optional/gen4.h"
 #endif
-#include <algorithm>
 #include <chrono>
-#include <climits>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iterator>
 
-#include "../../libs/filesystem.h"
-#include "../../libs/input.h"
-#include "../../libs/script.h"
-#include "../../libs/song_parser.h"
+#include "../../libs/file/filesystem.h"
+#include "../../libs/file/script.h"
+#include "../../libs/input/input.h"
+#include "../../libs/parsers/song_parser.h"
 #include "../song_select/file_navigator/navigator.h"
 
 int DanNavigator::total_notes_for(const std::vector<DanSongEntry>& songs) {
@@ -86,9 +84,9 @@ int DanNavigator::box_genre(const fs::path& box_def_dir) {
             return it->second;
         }
     }
-    int genre = (int)GenreIndex::NAMCO;
+    int genre = static_cast<int>(GenreIndex::NAMCO);
     if (fs::exists(box_def_dir / "box.def")) {
-        genre = (int)Navigator::parse_box_def_uncached(box_def_dir).genre_index;
+        genre = static_cast<int>(Navigator::parse_box_def_uncached(box_def_dir).genre_index);
     }
     if (memo_) {
         std::scoped_lock lock(memo_->mutex);
@@ -98,7 +96,7 @@ int DanNavigator::box_genre(const fs::path& box_def_dir) {
 }
 
 static std::string normalize_exam_type(std::string t) {
-    std::ranges::transform(t, t.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    std::ranges::transform(t, t.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     static const std::map<std::string, std::string> names = {
         {"judgeperfect", "judgeperfect"},
         {"jp", "judgeperfect"},
@@ -132,7 +130,8 @@ Exam DanNavigator::parse_exam(const rapidjson::Value& e) {
         exam.type = normalize_exam_type(e["type"].GetString());
     }
     exam.range = e.HasMember("range") && e["range"].IsString() ? e["range"].GetString() : "";
-    std::ranges::transform(exam.range, exam.range.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    std::ranges::transform(exam.range, exam.range.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (exam.range != "less") {
         exam.range = "more";
     }
@@ -196,7 +195,8 @@ std::optional<DanSongEntry> DanNavigator::load_song_entry(const rapidjson::Value
                 diff = d.GetInt();
             } else if (d.IsString()) {
                 std::string n = d.GetString();
-                std::ranges::transform(n, n.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+                std::ranges::transform(n, n.begin(),
+                                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                 static const std::map<std::string, int> names = {{"easy", 0}, {"normal", 1}, {"hard", 2}, {"oni", 3},
                                                                  {"edit", 4}, {"0", 0},      {"1", 1},    {"2", 2},
                                                                  {"3", 3},    {"4", 4}};
@@ -494,7 +494,7 @@ std::vector<DanBoxData> DanNavigator::scan_roots(const std::vector<fs::path>& ro
 
 int DanNavigator::scan_root_data(const fs::path& root_path, std::vector<DanBoxData>& out) {
     std::vector<DanBoxData> data = scan_roots({root_path});
-    int added = (int)data.size();
+    int added = static_cast<int>(data.size());
     for (DanBoxData& d : data) {
         out.push_back(std::move(d));
     }
@@ -548,7 +548,8 @@ void DanNavigator::publish(std::vector<DanBoxData>&& data) {
         const std::string set = d.json_path.parent_path().parent_path().string();
         const std::string name = d.json_path.parent_path().filename().string();
         size_t i = 0;
-        while (i < name.size() && (unsigned char)name[i] >= '0' && (unsigned char)name[i] <= '9') {
+        while (i < name.size() && static_cast<unsigned char>(name[i]) >= '0' &&
+               static_cast<unsigned char>(name[i]) <= '9') {
             i++;
         }
         int num = INT_MAX;
@@ -682,7 +683,7 @@ void DanNavigator::init(const std::vector<fs::path>& song_paths) {
 }
 
 void DanNavigator::set_positions(bool init, float duration) {
-    int n = (int)boxes.size();
+    int n = static_cast<int>(boxes.size());
     if (n == 0) {
         return;
     }
@@ -735,7 +736,8 @@ void DanNavigator::move_left() {
         return;
     }
     boxes[selected_index]->close_box();
-    selected_index = (selected_index - 1 + (int)boxes.size()) % (int)boxes.size();
+    const auto box_count = static_cast<int>(boxes.size());
+    selected_index = (selected_index - 1 + box_count) % box_count;
     set_positions(false, 166);
     boxes[selected_index]->expand_box();
 }
@@ -746,7 +748,7 @@ void DanNavigator::move_right() {
         return;
     }
     boxes[selected_index]->close_box();
-    selected_index = (selected_index + 1) % (int)boxes.size();
+    selected_index = (selected_index + 1) % static_cast<int>(boxes.size());
     set_positions(false, 166);
     boxes[selected_index]->expand_box();
 }
@@ -757,7 +759,8 @@ void DanNavigator::skip(int delta) {
         return;
     }
     boxes[selected_index]->close_box();
-    selected_index = ((selected_index + delta) % (int)boxes.size() + (int)boxes.size()) % (int)boxes.size();
+    const auto box_count = static_cast<int>(boxes.size());
+    selected_index = ((selected_index + delta) % box_count + box_count) % box_count;
     set_positions(true, 0);
     boxes[selected_index]->expand_box();
 }
@@ -797,8 +800,8 @@ static float dan_cursor_alpha(double ms) {
         f += 60.0;
     }
     double t = f / 5.0; // the table is every 5th frame
-    int i = (int)t;
-    float u = (float)(t - i);
+    int i = static_cast<int>(t);
+    float u = t - i;
     return A[i % 12] * (1.0f - u) + A[(i + 1) % 12] * u;
 }
 
@@ -845,10 +848,8 @@ void DanNavigator::draw() {
 
     for (auto& b : boxes) {
         float pos = b->position;
-        if (pos >= -156 * tex.screen_scale && pos <= tex.screen_width + 144 * tex.screen_scale) {
-            if (fn_draw_box.valid()) {
-                fn_draw_box(lua_paint, b.get());
-            }
+        if (pos >= -156 * tex.screen_scale && pos <= tex.screen_width + 144 * tex.screen_scale && fn_draw_box.valid()) {
+            fn_draw_box(lua_paint, b.get());
         }
     }
 
@@ -883,8 +884,8 @@ void DanNavigator::draw() {
     if (af < 0.0 || af > 60.0) {
         return;
     }
-    const float drift = (float)(af / 60.0 * 10.0);
-    const float aa = (af <= 30.0) ? 1.0f : (float)(1.0 - (af - 30.0) / 30.0);
+    const float drift = af / 60.0 * 10.0;
+    const float aa = (af <= 30.0) ? 1.0f : (1.0 - (af - 30.0) / 30.0);
     if (t_arrow_r) {
         tex.draw_texture(t_arrow_r, {.x = pos + drift, .fade = aa});
     }

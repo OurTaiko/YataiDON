@@ -12,7 +12,7 @@ public:
     bool entered = false;
     bool genre_voice_started = false;
     std::unique_ptr<FadeAnimation> enter_fade;
-    std::optional<ray::Texture> box_texture;
+    std::optional<Texture> box_texture;
 
     FolderBox(const fs::path& path, const BoxDef& box_def,
               std::map<std::pair<std::string, std::string>, fs::path>& song_files);

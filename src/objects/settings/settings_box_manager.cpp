@@ -1,5 +1,7 @@
 #include "settings_box_manager.h"
 
+#include <iterator>
+
 static constexpr int INITIAL_SELECTED = 3;
 // Same 1280x720-canvas base values as SettingsBox; scale with the skin.
 static constexpr float BOX_STEP_BASE = 100.0f;
@@ -31,7 +33,7 @@ SettingsBoxManager::SettingsBoxManager(const rapidjson::Document& tmpl) : select
         boxes.push_back(std::make_unique<SettingsBox>(cat_name, label, *opts));
     }
 
-    int num_boxes = (int)boxes.size();
+    int num_boxes = static_cast<int>(boxes.size());
     for (int i = 0; i < num_boxes; i++) {
         boxes[i]->set_box_count(num_boxes);
         boxes[i]->set_y((BOX_INITIAL_Y_BASE + i * BOX_STEP_BASE) * tex.screen_scale);
@@ -61,7 +63,7 @@ void SettingsBoxManager::move_left() {
         for (auto& b : boxes) {
             b->move_left();
         }
-        int num_boxes = (int)boxes.size();
+        int num_boxes = static_cast<int>(boxes.size());
         selected_box_index = (selected_box_index - 1 + num_boxes) % num_boxes;
     }
 }
@@ -78,7 +80,7 @@ void SettingsBoxManager::move_right() {
         for (auto& b : boxes) {
             b->move_right();
         }
-        selected_box_index = (selected_box_index + 1) % (int)boxes.size();
+        selected_box_index = (selected_box_index + 1) % static_cast<int>(boxes.size());
     }
 }
 
@@ -106,7 +108,7 @@ bool SettingsBoxManager::select_box() {
 }
 
 void SettingsBoxManager::update(double current_time_ms) {
-    for (int i = 0; i < (int)boxes.size(); i++) {
+    for (int i = 0; i < std::ssize(boxes); i++) {
         bool selected = (i == selected_box_index) && !box_selected;
         boxes[i]->update(current_time_ms, selected);
     }

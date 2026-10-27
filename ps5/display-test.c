@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <stdint.h>
-unsigned ps5_scanout_fps = 60, ps5_scanout_active_fps = 60;
 static int supported = 1, fail_mode, calls, last_mode, waits;
 int __real_sceVideoOutOpen(int32_t u, int32_t t, int32_t i, const void *p) { return 7; }
 int __real_sceVideoOutClose(int32_t h) { assert(h == 7); return 0; }

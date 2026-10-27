@@ -2,10 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
-#include "../libs/filesystem.h"
-#include "../libs/input.h"
-#include "../libs/scores.h"
+#include "../libs/file/filesystem.h"
+#include "../libs/file/scores.h"
+#include "../libs/input/input.h"
 
 // the shoudan celebration and the congrats popup are skin art: a skin without the folder skips them
 static bool has_dan_result_art(const char* subset) {
@@ -55,7 +56,7 @@ void DanResultScreen::on_screen_start() {
     page_start_ms = get_current_ms();
     page1_start_ms = page_start_ms;
 
-    const SessionData& sd = global_data.session_data[(int)global_data.player_num];
+    const SessionData& sd = global_data.session_data[static_cast<int>(global_data.player_num)];
     background.emplace(PlayerNum::DAN, tex.screen_width);
 
     {
@@ -74,7 +75,7 @@ void DanResultScreen::on_screen_start() {
     }
     gauge_exam = -1;
     const DanResultData& rd = sd.dan_result_data;
-    for (int i = 0; i < (int)rd.exams.size() && i < (int)rd.exam_data.size(); i++) {
+    for (int i = 0; i < std::ssize(rd.exams) && i < std::ssize(rd.exam_data); i++) {
         if (rd.exams[i].type == "gauge") {
             gauge_exam = i;
             gauge_value = std::max(0, std::min(100, rd.exam_data[i].counter_value));
@@ -106,7 +107,7 @@ void DanResultScreen::on_screen_start() {
 }
 
 void DanResultScreen::apply_reward() {
-    const SessionData& sd = global_data.session_data[(int)global_data.player_num];
+    const SessionData& sd = global_data.session_data[static_cast<int>(global_data.player_num)];
     const DanResultData& rd = sd.dan_result_data;
     if (rd.odai_result < 0) {
         return; // legacy record — no verdict
@@ -158,7 +159,7 @@ void DanResultScreen::apply_reward() {
 }
 
 void DanResultScreen::build_page2_timeline() {
-    const SessionData& sd = global_data.session_data[(int)global_data.player_num];
+    const SessionData& sd = global_data.session_data[static_cast<int>(global_data.player_num)];
     const DanResultData& rd = sd.dan_result_data;
 
     totals_start = TOTAL_SLIDE_MS;
@@ -186,7 +187,7 @@ void DanResultScreen::build_page2_timeline() {
     se_row_fill.assign(row_count, false);
     se_row_judge.assign(row_count, false);
     double t = totals_end + WAIT_DETAIL_MS;
-    for (int i = 0; i < (int)row_count; i++) {
+    for (int i = 0; i < static_cast<int>(row_count); i++) {
         DanResultRowSchedule& r = rows[i];
         if (i == gauge_exam) {
             r.land = 0.0;
@@ -207,7 +208,7 @@ void DanResultScreen::build_page2_timeline() {
         }
         r.land = t;
         r.fill0 = t + ROW_SLIDE_MS;
-        r.filld = std::max(0.0, (double)std::lround(travel * 100.0f) * ROW_UNIT_MS);
+        r.filld = std::max(0.0, std::lround(travel * 100.0f) * ROW_UNIT_MS);
         r.numin = r.fill0 + r.filld + ROW_NUMIN_MS;
         t = r.numin + ROW_NUMWAIT_MS;
     }
@@ -314,7 +315,7 @@ void DanResultScreen::handle_input(double current_ms) {
 
 void DanResultScreen::update_sounds(double now) {
     const double on_page = now - page_start_ms;
-    const SessionData& sd = global_data.session_data[(int)global_data.player_num];
+    const SessionData& sd = global_data.session_data[static_cast<int>(global_data.player_num)];
     const DanResultData& rd = sd.dan_result_data;
 
     if (congrats_showing) {
@@ -341,7 +342,7 @@ void DanResultScreen::update_sounds(double now) {
     }
 
     if (!is_page2) {
-        while (page1_plates_played < (int)rd.songs.size() && page1_plates_played < 3 &&
+        while (page1_plates_played < std::ssize(rd.songs) && page1_plates_played < 3 &&
                on_page >= SONG_LAND_MS[page1_plates_played]) {
             audio.play_sound("partial_plate", VolumePreset::SOUND);
             page1_plates_played++;
@@ -362,13 +363,13 @@ void DanResultScreen::update_sounds(double now) {
         se_gauge_max = true;
         audio.play_sound("achieve_tamashii", VolumePreset::SOUND);
     }
-    for (int i = 0; i < (int)rows.size(); i++) {
+    for (int i = 0; i < std::ssize(rows); i++) {
         if (i == gauge_exam) {
             continue;
         }
         if (!se_row_fill[i] && on_page >= rows[i].fill0 && rows[i].filld > 0 && !page2_skipped) {
             se_row_fill[i] = true;
-            const bool less = i < (int)rd.exams.size() && rd.exams[i].range == "less";
+            const bool less = i < std::ssize(rd.exams) && rd.exams[i].range == "less";
             audio.play_sound(less ? "gauge_down_loop" : "gauge_up_loop", VolumePreset::SOUND);
         }
         if (!se_row_judge[i] && on_page >= rows[i].numin && !page2_skipped) {
@@ -426,10 +427,9 @@ std::optional<Screens> DanResultScreen::update() {
         }
     }
 
-    if (congrats_showing && current_ms - congrats_start_ms >= 899 * FRAME_MS + 180 * LUA_FRAME_MS) {
-        if (!fade_out->is_started) {
-            fade_out->start();
-        }
+    if (congrats_showing && current_ms - congrats_start_ms >= 899 * FRAME_MS + 180 * LUA_FRAME_MS &&
+        !fade_out->is_started) {
+        fade_out->start();
     }
 
     if (fade_out->is_finished) {

@@ -5,9 +5,9 @@
 Transition::Transition(const std::string& title, const std::string& subtitle, bool is_second) : is_second(is_second) {
 
     this->title = std::make_unique<OutlinedText>(title, global_tex.get_skin_config(SC::TRANSITION_TITLE)->font_size,
-                                                 ray::WHITE, ray::BLACK, false, 5);
+                                                 Color::WHITE, Color::BLACK, false, 5);
     this->subtitle = std::make_unique<OutlinedText>(
-        subtitle, global_tex.get_skin_config(SC::TRANSITION_SUBTITLE)->font_size, ray::WHITE, ray::BLACK, false, 5);
+        subtitle, global_tex.get_skin_config(SC::TRANSITION_SUBTITLE)->font_size, Color::WHITE, Color::BLACK, false, 5);
 
     t_rainbow_text_bg = global_tex.get_texture("rainbow_transition/text_bg");
 
@@ -23,23 +23,21 @@ Transition::Transition(const std::string& title, const std::string& subtitle, bo
 
 Transition::~Transition() {
     if (loading_graphic.has_value()) {
-        ray::UnloadTexture(loading_graphic.value());
+        unload_texture(loading_graphic.value());
     }
 }
 
 void Transition::add_loading_graphic(const std::string& path) {
-    ray::Texture2D tex = ray::LoadTexture(path.c_str());
+    Texture tex = load_texture_mipmapped(path.c_str());
     if (tex.id == 0) {
         spdlog::error("Failed to load transition loading graphic: {}", path);
         return;
     }
     if (loading_graphic.has_value()) {
-        ray::UnloadTexture(loading_graphic.value());
+        unload_texture(loading_graphic.value());
         loading_graphic.reset();
     }
     loading_graphic.emplace(tex);
-    ray::GenTextureMipmaps(&loading_graphic.value());
-    ray::SetTextureFilter(loading_graphic.value(), ray::TEXTURE_FILTER_TRILINEAR);
 }
 
 void Transition::set_dan(int color, const std::string& rank_name) {
@@ -49,16 +47,16 @@ void Transition::set_dan(int color, const std::string& rank_name) {
     t_loading_dan_plaque = global_tex.get_texture("loading_dan/plaque");
     if (!rank_name.empty()) {
         dan_rank_text = std::make_unique<OutlinedText>(
-            rank_name, global_tex.get_skin_config(SC::DAN_SELECT_TITLE)->font_size, ray::WHITE, ray::BLACK, true);
+            rank_name, global_tex.get_skin_config(SC::DAN_SELECT_TITLE)->font_size, Color::WHITE, Color::BLACK, true);
     }
 }
 
 void Transition::draw_dan(float total_offset) {
     const double f = 36.0 + (get_current_ms() - dan_start_ms) * 0.06;
-    const float y = -106.0f - 0.625f * (float)std::clamp(f - 36.0, 0.0, 179.0);
-    const float a = (float)std::clamp((f - 44.0) / 20.0, 0.0, 1.0);
-    const float black = (float)std::clamp(1.0 - (f - 36.0) / 29.0, 0.0, 1.0);
-    const float dy = -(float)cur_rainbow - total_offset;
+    const float y = -106.0f - 0.625f * static_cast<float>(std::clamp(f - 36.0, 0.0, 179.0));
+    const float a = std::clamp((f - 44.0) / 20.0, 0.0, 1.0);
+    const float black = std::clamp(1.0 - (f - 36.0) / 29.0, 0.0, 1.0);
+    const float dy = -static_cast<float>(cur_rainbow) - total_offset;
 
     global_tex.draw_texture(t_loading_dan_night, {.y = y + dy});
     if (a > 0.0f) {
@@ -72,7 +70,7 @@ void Transition::draw_dan(float total_offset) {
         }
     }
     if (black > 0.0f) {
-        ray::DrawRectangle(0, 0, global_tex.screen_width, global_tex.screen_height, ray::Fade(ray::BLACK, black));
+        draw_rectangle(0, 0, global_tex.screen_width, global_tex.screen_height, fade(Color::BLACK, black));
     }
 }
 
@@ -109,13 +107,13 @@ void Transition::draw_song_info() {
         fade_2 = std::min(0.70, cur_fade_out);
         offset = global_tex.get_skin_config(SC::TRANSITION_OFFSET)->y - cur_rainbow;
     }
-    global_tex.draw_texture(t_rainbow_text_bg, {.y = (float)-cur_rainbow - offset, .fade = fade_2});
+    global_tex.draw_texture(t_rainbow_text_bg, {.y = static_cast<float>(-cur_rainbow) - offset, .fade = fade_2});
 
-    float x = (float)global_tex.screen_width / 2 - title->width / 2;
+    float x = static_cast<float>(global_tex.screen_width) / 2 - title->width / 2;
     float y = global_tex.get_skin_config(SC::TRANSITION_TITLE)->y - title->height / 2 - cur_rainbow - offset;
     title->draw({.x = x, .y = y, .fade = fade_1});
 
-    x = (float)global_tex.screen_width / 2 - subtitle->width / 2;
+    x = static_cast<float>(global_tex.screen_width) / 2 - subtitle->width / 2;
     y = global_tex.get_skin_config(SC::TRANSITION_SUBTITLE)->y - subtitle->height / 2 - cur_rainbow - offset;
     subtitle->draw({.x = x, .y = y, .fade = fade_1});
 }
@@ -143,13 +141,14 @@ void Transition::draw() {
         return;
     }
     if (loading_graphic.has_value()) {
-        ray::Rectangle src = {0, 0, (float)loading_graphic.value().width, (float)loading_graphic.value().height};
-        ray::Rectangle dst = {0,
-                              global_tex.screen_height +
-                                  (global_tex.get_skin_config(SC::TRANSITION_OFFSET)->y - global_tex.screen_height) -
-                                  (float)cur_rainbow - total_offset,
-                              (float)global_tex.screen_width, (float)global_tex.screen_height};
-        ray::DrawTexturePro(loading_graphic.value(), src, dst, {0, 0}, 0, ray::WHITE);
+        Rect src = {0, 0, static_cast<float>(loading_graphic.value().width),
+                    static_cast<float>(loading_graphic.value().height)};
+        Rect dst = {0,
+                    global_tex.screen_height +
+                        (global_tex.get_skin_config(SC::TRANSITION_OFFSET)->y - global_tex.screen_height) -
+                        static_cast<float>(cur_rainbow) - total_offset,
+                    static_cast<float>(global_tex.screen_width), static_cast<float>(global_tex.screen_height)};
+        draw_texture_pro(loading_graphic.value(), src, dst, {0, 0}, 0, Color::WHITE);
     }
 
     if (fn_draw_info.valid()) {

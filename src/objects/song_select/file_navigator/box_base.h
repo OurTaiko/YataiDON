@@ -3,7 +3,8 @@
 #include <cmath>
 #include <numbers>
 
-#include "../../../libs/text.h"
+#include "../../../libs/gfx/color_utils.h"
+#include "../../../libs/gfx/text.h"
 #include "../../enums.h"
 
 struct BoxDef {
@@ -12,9 +13,9 @@ struct BoxDef {
     GenreIndex genre_index;
     std::string genre_label;
     std::string collection;
-    std::optional<ray::Color> back_color;
-    std::optional<ray::Color> fore_color;
-    std::optional<ray::Color> box_color;
+    std::optional<Color> back_color;
+    std::optional<Color> fore_color;
+    std::optional<Color> box_color;
     std::array<std::string, 3> explanation;
 };
 
@@ -38,9 +39,9 @@ public:
     std::array<std::string, 3> explanation;
 
     TextureIndex texture_index;
-    std::optional<ray::Color> back_color;
-    ray::Color fore_color;
-    ray::Color text_color = ray::WHITE;
+    std::optional<Color> back_color;
+    Color fore_color;
+    Color text_color = Color::WHITE;
 
     std::unique_ptr<FadeAnimation> fade;
     std::unique_ptr<MoveAnimation> open_anim;
@@ -71,7 +72,7 @@ public:
     bool is_new = false;
     bool preserve_order = false;
 
-    BaseBox(const fs::path& path, const BoxDef& box_def);
+    BaseBox(fs::path path, const BoxDef& box_def);
     virtual ~BaseBox();
 
     virtual void load_text();
@@ -94,7 +95,7 @@ public:
 
     void move_box(float target_position, float duration, float delay = 0.0f,
                   std::optional<EaseType> ease = EaseType::Cubic);
-    virtual void update(double current_ms);
+    virtual void update(double current_time);
 
     const char* draw_state() const {
         if (yellow_box_active && is_diff_select) {
@@ -111,7 +112,7 @@ public:
         if (elapsed <= 200.0) {
             return 0.0f;
         }
-        float deg = std::min((float)(elapsed - 200.0) * 1.5f, 90.0f);
+        float deg = std::min(static_cast<float>(elapsed - 200.0) * 1.5f, 90.0f);
         return std::sin(deg * std::numbers::pi_v<float> / 180.0f) * 62.0f;
     }
     OutlinedText* name_text() const { return name.get(); }
@@ -123,12 +124,12 @@ public:
     bool has_recolor() const { return shader_loaded && texture_index == TextureIndex::NONE; }
     void begin_recolor() {
         if (shader_loaded) {
-            ray::BeginShaderMode(shader);
+            begin_shader_mode(shader);
         }
     }
     void end_recolor() {
         if (shader_loaded) {
-            ray::EndShaderMode();
+            end_shader_mode();
         }
     }
 
@@ -136,7 +137,7 @@ public:
         if (!horizontal_name_cache) {
             float font_size = tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
             if (utf8_char_count(text_name) >= 30) {
-                font_size -= (int)(10 * tex.screen_scale);
+                font_size -= static_cast<int>(10 * tex.screen_scale);
             }
             horizontal_name_cache = std::make_unique<OutlinedText>(text_name, font_size, text_color, fore_color, false);
         }
@@ -147,10 +148,10 @@ public:
         if (!horizontal_name_large_cache) {
             float font_size = tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
             if (utf8_char_count(text_name) >= 30) {
-                font_size -= (int)(10 * tex.screen_scale);
+                font_size -= static_cast<int>(10 * tex.screen_scale);
             }
-            horizontal_name_large_cache =
-                std::make_unique<OutlinedText>(text_name, (int)(font_size * 1.5f), text_color, fore_color, false, 6);
+            horizontal_name_large_cache = std::make_unique<OutlinedText>(text_name, static_cast<int>(font_size * 1.5f),
+                                                                         text_color, fore_color, false, 6);
         }
         return horizontal_name_large_cache.get();
     }
@@ -158,8 +159,8 @@ public:
 protected:
     std::unique_ptr<MoveAnimation> move;
 
-    ray::Shader shader;
-    std::shared_ptr<ray::Shader> shader_owner;
+    Shader shader;
+    std::shared_ptr<Shader> shader_owner;
     bool shader_loaded = false;
 
     std::unique_ptr<OutlinedText> name;

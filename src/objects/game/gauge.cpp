@@ -4,20 +4,20 @@
 #include <stdexcept>
 
 Gauge::Gauge(int total_notes, int difficulty, int level, PlayerNum player_num) : player_num(player_num) {
-    this->difficulty = std::clamp(difficulty, 0, (int)Difficulty::ONI);
-    clear_points = this->difficulty <= (int)Difficulty::EASY   ? 6000
-                   : this->difficulty <= (int)Difficulty::HARD ? 7000
-                                                               : 8000;
+    this->difficulty = std::clamp(difficulty, 0, static_cast<int>(Difficulty::ONI));
+    clear_points = this->difficulty <= static_cast<int>(Difficulty::EASY)   ? 6000
+                   : this->difficulty <= static_cast<int>(Difficulty::HARD) ? 7000
+                                                                            : 8000;
     const GaugeTable& table_row = table[this->difficulty][std::clamp(level - 1, 0, 9)];
-    const double denom = std::max(1, total_notes) * (double)table_row.soul_percent;
+    const double denom = std::max(1, total_notes) * table_row.soul_percent;
     good_points = (denom > 0.0) ? 1'000'000.0 / denom : 0;
     ok_points = good_points * table_row.ok_multiplier;
     bad_points = good_points * table_row.bad_multiplier;
     points = 0;
 
-    if (this->difficulty == (int)Difficulty::EASY) {
+    if (this->difficulty == static_cast<int>(Difficulty::EASY)) {
         string_diff = "_easy";
-    } else if (this->difficulty <= (int)Difficulty::HARD) {
+    } else if (this->difficulty <= static_cast<int>(Difficulty::HARD)) {
         string_diff = "_normal";
     } else {
         string_diff = "_hard";
@@ -32,7 +32,9 @@ Gauge::Gauge(int total_notes, int difficulty, int level, PlayerNum player_num) :
 
 Gauge Gauge::dan(const std::vector<DanSongEntry>& songs, int total_notes, PlayerNum player_num) {
     // a missing LEVEL in the tja arrives as 0. treat it as oni 10 like player does
-    auto diff_of = [](const DanSongEntry& s) { return s.level <= 0 ? (int)Difficulty::ONI : s.difficulty; };
+    auto diff_of = [](const DanSongEntry& s) {
+        return s.level <= 0 ? static_cast<int>(Difficulty::ONI) : s.difficulty;
+    };
     auto level_of = [](const DanSongEntry& s) { return s.level <= 0 ? 10 : s.level; };
 
     if (songs.empty()) {
@@ -49,7 +51,7 @@ Gauge Gauge::dan(const std::vector<DanSongEntry>& songs, int total_notes, Player
     GaugeTable row{0.0, 0.0, 0.0};
     double inv_sum = 0.0;
     for (const DanSongEntry& s : songs) {
-        const int d = std::clamp(diff_of(s), 0, (int)Difficulty::ONI);
+        const int d = std::clamp(diff_of(s), 0, static_cast<int>(Difficulty::ONI));
         const GaugeTable& r = g.table[d][std::clamp(level_of(s) - 1, 0, 9)];
         if (r.soul_percent > 0.0) {
             inv_sum += 1.0 / r.soul_percent;
@@ -68,7 +70,7 @@ Gauge Gauge::dan(const std::vector<DanSongEntry>& songs, int total_notes, Player
 
 void Gauge::apply_points_clamped(double delta) {
     previous_points = points;
-    points = std::clamp(points + delta, 0.0, (double)max_points);
+    points = std::clamp<double>(points + delta, 0.0, max_points);
     if (std::abs(points - max_points) < POINTS_EPS) {
         points = max_points;
     }
@@ -126,7 +128,7 @@ void Gauge::update(double current_ms) {
 
     if (rainbow_fade_in.has_value()) {
         rainbow_fade_in.value()->update(current_ms);
-        rainbow_frac = (float)fmod((current_ms - rainbow_start_ms) / 75.0, 8.0);
+        rainbow_frac = fmod((current_ms - rainbow_start_ms) / 75.0, 8.0);
     }
 }
 
@@ -140,9 +142,9 @@ void Gauge::draw(float y) {
         }
     }
     const bool anim_active = gauge_update_anim && gauge_update_anim->is_started && !gauge_update_anim->is_finished;
-    const float anim_alpha = gauge_update_anim ? (float)gauge_update_anim->attribute : 0.0f;
-    const float rainbow_fade = rainbow_fade_in.has_value() ? (float)rainbow_fade_in.value()->attribute : -1.0f;
-    const int fire_frame = tamashii_fire_change ? (int)tamashii_fire_change->attribute : 0;
+    const float anim_alpha = gauge_update_anim ? gauge_update_anim->attribute : 0.0f;
+    const float rainbow_fade = rainbow_fade_in.has_value() ? rainbow_fade_in.value()->attribute : -1.0f;
+    const int fire_frame = tamashii_fire_change ? static_cast<int>(tamashii_fire_change->attribute) : 0;
     call(fn_draw, "Gauge:draw", y, points, previous_points, max_points, clear_points, get_is_clear(), get_is_rainbow(),
          anim_active, anim_alpha, rainbow_fade, rainbow_frac, fire_frame);
 }

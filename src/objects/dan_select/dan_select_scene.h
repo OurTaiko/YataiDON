@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // Skin-side draw for the texture-only parts of the dan_select screen (DanSelect in dan_select.lua).
 class DanSelectScene : public LuaScript {

@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <string>
 
-#include "../../../libs/scores.h"
-#include "../../../libs/song_parser.h"
-#include "../../../libs/text.h"
+#include "../../../libs/file/scores.h"
+#include "../../../libs/gfx/text.h"
+#include "../../../libs/parsers/song_parser.h"
 
 DanBox::DanBox(const fs::path& path, const std::string& title, int color, const std::vector<DanSongEntry>& songs_in,
                const std::vector<Exam>& exams_in, int total_notes_in)
@@ -26,9 +26,13 @@ void DanBox::load_text() {
     }
     BaseBox::load_text(); // populates name (vertical) for closed state
     const SkinInfo* chip_slot = tex.get_skin_config(SC::DAN_SELECT_CHIP_NAME);
-    float base_font = (chip_slot && chip_slot->font_size > 0)
-                          ? (float)chip_slot->font_size
-                          : (float)tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
+    float base_font;
+    if (chip_slot && chip_slot->font_size > 0) {
+        base_font = chip_slot->font_size;
+    } else {
+        base_font = tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
+    }
+
     float name_outline = 5.0f;
     if (utf8_char_count(text_name) >= 30) {
         float shrunk = dan_shrink_font(base_font);
@@ -36,10 +40,11 @@ void DanBox::load_text() {
         base_font = shrunk;
     }
     const bool chip_black = tex.options[SCO::DAN_CHIP_NAME_BLACK];
-    name = std::make_unique<OutlinedText>(text_name, (int)base_font, chip_black ? ray::BLACK : ray::WHITE, ray::BLACK,
-                                          true, chip_black ? 0.0f : name_outline);
+    name =
+        std::make_unique<OutlinedText>(text_name, static_cast<int>(base_font), chip_black ? Color::BLACK : Color::WHITE,
+                                       Color::BLACK, true, chip_black ? 0.0f : name_outline);
     int font_size = tex.get_skin_config(SC::DAN_SELECT_TITLE)->font_size;
-    hori_name = std::make_unique<OutlinedText>(dan_title, font_size, ray::WHITE, ray::BLACK, false);
+    hori_name = std::make_unique<OutlinedText>(dan_title, font_size, Color::WHITE, Color::BLACK, false);
 
     int revealed = 0;
     {
@@ -83,15 +88,15 @@ void DanBox::load_text() {
         int sub_font = base_sub_font;
         float sub_outline = 5.0f;
         if (utf8_char_count(sub_str) >= 30) {
-            float shrunk = dan_shrink_font((float)base_sub_font);
-            sub_outline = 5.0f * (shrunk / (float)base_sub_font);
-            sub_font = (int)shrunk;
+            float shrunk = dan_shrink_font(base_sub_font);
+            sub_outline = 5.0f * (shrunk / base_sub_font);
+            sub_font = static_cast<int>(shrunk);
         }
 
         const bool vertical = !tex.options[SCO::DAN_TITLE_HORIZONTAL];
         song_texts.emplace_back(
-            std::make_unique<OutlinedText>(title_str, font_size, ray::WHITE, ray::BLACK, vertical),
-            std::make_unique<OutlinedText>(sub_str, sub_font, ray::WHITE, ray::BLACK, vertical, sub_outline));
+            std::make_unique<OutlinedText>(title_str, font_size, Color::WHITE, Color::BLACK, vertical),
+            std::make_unique<OutlinedText>(sub_str, sub_font, Color::WHITE, Color::BLACK, vertical, sub_outline));
     }
     text_loaded = true;
 }

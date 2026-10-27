@@ -2,10 +2,10 @@
 
 #include <unordered_map>
 
-#include "../../libs/network.h"
+#include "../../libs/gfx/text.h"
+#include "../../libs/network/network.h"
+#include "../../libs/parsers/song_parser.h"
 #include "../../libs/screen.h"
-#include "../../libs/song_parser.h"
-#include "../../libs/text.h"
 #include "../global/chara_3d.h"
 #include "../global/nameplate.h"
 #include "background.h"
@@ -55,6 +55,8 @@ public:
 
     Player(std::optional<SongParser>& parser_ref, PlayerNum player_num_param, int difficulty_param, bool is_2p_param,
            const Modifiers& modifiers_param);
+
+    virtual ~Player() = default;
 
     std::optional<JudgeCounter> judge_counter;
     std::optional<Gauge> gauge;

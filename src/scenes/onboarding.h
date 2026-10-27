@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "../libs/gfx/color_utils.h"
 #include "../libs/screen.h"
 
 class OnboardingScreen : public Screen {
@@ -24,7 +25,7 @@ private:
     void toggle_skin(int skin);
     void begin_download();
     bool apply();
-    void draw_line(const std::string& text, float y, int size, ray::Color color);
+    void draw_line(const std::string& text, float y, int size, Color color);
 
 public:
     OnboardingScreen() : Screen("onboarding") {}

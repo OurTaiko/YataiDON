@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../libs/gfx/text.h"
 #include "../libs/screen.h"
-#include "../libs/text.h"
 #include "../objects/game/song_info.h"
 #include "../objects/global/allnet_indicator.h"
 #include "../objects/global/coin_overlay.h"
@@ -24,7 +24,7 @@ protected:
     CoinOverlay coin_overlay;
 
     std::optional<ResultBackground> background;
-    std::optional<ray::Texture2D> loading_graphic;
+    std::optional<Texture> loading_graphic;
     double skipped_time = 0;
     static constexpr double kFrameMs = 1000.0 / 120.0;
     static constexpr double kEnableSkipMs = 100 * kFrameMs;

@@ -2,8 +2,8 @@
 
 #include <string>
 
-#include "../../libs/audio.h"
-#include "../../libs/script.h"
+#include "../../libs/audio/audio.h"
+#include "../../libs/file/script.h"
 
 // The song intro between dan courses: doors close over the lane, the song title shows, the doors open
 // on the next chart. This keeps the timing and the door sounds; the skin's DanBetween

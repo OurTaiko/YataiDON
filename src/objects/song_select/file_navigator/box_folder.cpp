@@ -7,9 +7,9 @@
 #include <mutex>
 #include <unordered_set>
 
-#include "../../../libs/audio.h"
-#include "../../../libs/filesystem.h"
-#include "../../../libs/scores.h"
+#include "../../../libs/audio/audio.h"
+#include "../../../libs/file/filesystem.h"
+#include "../../../libs/file/scores.h"
 #include "navigator.h"
 
 namespace {
@@ -71,7 +71,7 @@ namespace {
             const fs::directory_entry& entry = *scan;
             if (entry.path().filename() == "song_list.txt") {
                 auto entries = read_song_list(entry.path());
-                tja_count += (int)entries.size();
+                tja_count += static_cast<int>(entries.size());
                 for (const auto& e : entries) {
                     if (auto found = scores_manager.get_path_by_hash(e.hash)) {
                         update_crown(*found, player_1_id, crown, disqualified_p1);
@@ -188,7 +188,7 @@ void FolderBox::run_deferred_scans(std::atomic<bool>& abort_flag) {
 
 FolderBox::~FolderBox() {
     if (box_texture.has_value()) {
-        ray::UnloadTexture(box_texture.value());
+        unload_texture(box_texture.value());
     }
 }
 
@@ -202,12 +202,10 @@ void FolderBox::load_text() {
             it++;
         }
         if (!dir_ec && it != end) {
-            box_texture = ray::LoadTexture((it->path()).string().c_str());
-            set_preview_texture_filter(&box_texture.value());
+            box_texture = load_texture_mipmapped((it->path()).string().c_str());
         }
     } else if (fs::exists(fs::path(path / "box.png")) && !box_texture.has_value()) {
-        box_texture = ray::LoadTexture((path / "box.png").string().c_str());
-        set_preview_texture_filter(&box_texture.value());
+        box_texture = load_texture_mipmapped((path / "box.png").string().c_str());
     }
     text_loaded = true;
 }
@@ -228,7 +226,7 @@ void FolderBox::update(double current_time) {
     enter_fade->update(current_time);
     BaseBox::update(current_time);
 
-    std::string genre_voice_str = "genre_voice_" + std::to_string((int)genre_index);
+    std::string genre_voice_str = "genre_voice_" + std::to_string(static_cast<int>(genre_index));
     if (!is_open_prev && yellow_box_opened) {
         if (!audio.is_sound_playing("voice_enter")) {
             audio.play_sound(genre_voice_str, VolumePreset::VOICE);
@@ -244,7 +242,7 @@ void FolderBox::enter_box() {
     entered = true;
     enter_fade->start();
     if (genre_voice_started) {
-        audio.stop_sound("genre_voice_" + std::to_string((int)genre_index));
+        audio.stop_sound("genre_voice_" + std::to_string(static_cast<int>(genre_index)));
     }
 }
 

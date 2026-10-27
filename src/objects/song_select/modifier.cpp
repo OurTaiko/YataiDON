@@ -1,36 +1,38 @@
 #include "modifier.h"
 
-#include "../../libs/audio.h"
+#include <algorithm>
+#include <iterator>
+#include <string_view>
+
+#include "../../libs/audio/audio.h"
 
 const std::array<std::string, 5> ModifierSelector::BASE_MOD_NAMES = {"auto", "speed", "display", "inverse", "random"};
 
+static bool PlayerData::* find_bool_modifier(std::string_view name) {
+    struct BoolModifier {
+        std::string_view name;
+        bool PlayerData::* member;
+    };
+
+    static constexpr BoolModifier modifiers[] = {
+        {"auto", &PlayerData::modifier_auto},
+        {"display", &PlayerData::modifier_display},
+        {"inverse", &PlayerData::modifier_inverse},
+        {"skip", &PlayerData::modifier_skip},
+    };
+
+    const auto modifier = std::ranges::find(modifiers, name, &BoolModifier::name);
+    return modifier != std::end(modifiers) ? modifier->member : nullptr;
+}
+
 bool ModifierSelector::get_bool(int mod_index) {
-    const std::string& n = mod_names[mod_index];
-    if (n == "auto") {
-        return player->modifier_auto;
-    }
-    if (n == "display") {
-        return player->modifier_display;
-    }
-    if (n == "inverse") {
-        return player->modifier_inverse;
-    }
-    if (n == "skip") {
-        return player->modifier_skip;
-    }
-    return false;
+    const auto member = find_bool_modifier(mod_names[mod_index]);
+    return member ? player->*member : false;
 }
 
 void ModifierSelector::set_bool(int mod_index, bool value) {
-    const std::string& n = mod_names[mod_index];
-    if (n == "auto") {
-        player->modifier_auto = value;
-    } else if (n == "display") {
-        player->modifier_display = value;
-    } else if (n == "inverse") {
-        player->modifier_inverse = value;
-    } else if (n == "skip") {
-        player->modifier_skip = value;
+    if (const auto member = find_bool_modifier(mod_names[mod_index])) {
+        player->*member = value;
     }
 }
 
@@ -52,15 +54,15 @@ ModifierSelector::ModifierSelector(PlayerNum player_num, PlayerData* player) : p
         mod_names.emplace_back("neiro");
     }
 
-    blue_arrow_fade = (FadeAnimation*)tex.get_animation(29, true);
-    blue_arrow_move = (MoveAnimation*)tex.get_animation(30, true);
-    move = (MoveAnimation*)tex.get_animation(28, true);
-    move_out = tex.has_animation(43) ? (MoveAnimation*)tex.get_animation(43, true) : nullptr;
+    blue_arrow_fade = dynamic_cast<FadeAnimation*>(tex.get_animation(29, true));
+    blue_arrow_move = dynamic_cast<MoveAnimation*>(tex.get_animation(30, true));
+    move = dynamic_cast<MoveAnimation*>(tex.get_animation(28, true));
+    move_out = tex.has_animation(43) ? dynamic_cast<MoveAnimation*>(tex.get_animation(43, true)) : nullptr;
     move->start();
-    move_sideways = (MoveAnimation*)tex.get_animation(31, true);
-    fade_sideways = (FadeAnimation*)tex.get_animation(32, true);
+    move_sideways = dynamic_cast<MoveAnimation*>(tex.get_animation(31, true));
+    fade_sideways = dynamic_cast<FadeAnimation*>(tex.get_animation(32, true));
 
-    audio.play_sound("voice_options_" + std::to_string((int)player_num) + "p", VolumePreset::VOICE);
+    audio.play_sound("voice_options_" + std::to_string(static_cast<int>(player_num)) + "p", VolumePreset::VOICE);
 }
 
 ModifierSelector::~ModifierSelector() {
@@ -91,14 +93,14 @@ void ModifierSelector::load_neiro_names() {
 
     neiro_index = player->neiro_index;
     if (neiro_index == -1) {
-        neiro_index = (int)neiro_names.size() - 1;
+        neiro_index = static_cast<int>(neiro_names.size()) - 1;
     }
-    neiro_index = std::clamp(neiro_index, 0, (int)neiro_names.size() - 1);
-    player->neiro_index = (neiro_index == (int)neiro_names.size() - 1) ? -1 : neiro_index;
+    neiro_index = std::clamp(neiro_index, 0, static_cast<int>(neiro_names.size()) - 1);
+    player->neiro_index = (neiro_index == std::ssize(neiro_names) - 1) ? -1 : neiro_index;
 }
 
 void ModifierSelector::step_neiro(int dir) {
-    int count = (int)neiro_names.size();
+    int count = static_cast<int>(neiro_names.size());
     neiro_index = ((neiro_index + dir) % count + count) % count;
     player->neiro_index = (neiro_index == count - 1) ? -1 : neiro_index;
 
@@ -132,7 +134,7 @@ void ModifierSelector::confirm() {
         return;
     }
     current_mod_index++;
-    if (current_mod_index == (int)mod_names.size()) {
+    if (current_mod_index == std::ssize(mod_names)) {
         is_confirmed = true;
         if (move_out) {
             move = move_out;
@@ -224,26 +226,8 @@ void ModifierSelector::right() {
 }
 
 std::string ModifierSelector::row_label(const std::string& n) const {
-    if (n == "auto") {
-        return font_manager.get_text_label("modifier_name_auto");
-    }
-    if (n == "speed") {
-        return font_manager.get_text_label("modifier_name_speed");
-    }
-    if (n == "display") {
-        return font_manager.get_text_label("modifier_name_display");
-    }
-    if (n == "inverse") {
-        return font_manager.get_text_label("modifier_name_inverse");
-    }
-    if (n == "random") {
-        return font_manager.get_text_label("modifier_name_random");
-    }
-    if (n == "skip") {
-        return font_manager.get_text_label("modifier_name_skip");
-    }
-    if (n == "neiro") {
-        return font_manager.get_text_label("modifier_name_neiro");
+    if (std::ranges::contains(BASE_MOD_NAMES, n) || n == "skip" || n == "neiro") {
+        return font_manager.get_text_label("modifier_name_" + n);
     }
     return std::string();
 }
@@ -255,7 +239,7 @@ bool ModifierSelector::row_greyed(const std::string& name) const {
 std::vector<ModifierSelector::ModRow> ModifierSelector::lua_rows() {
     std::vector<ModRow> rows;
     rows.reserve(mod_names.size());
-    for (int i = 0; i < (int)mod_names.size(); i++) {
+    for (int i = 0; i < std::ssize(mod_names); i++) {
         const std::string& n = mod_names[i];
         ModRow r;
         r.name = n;

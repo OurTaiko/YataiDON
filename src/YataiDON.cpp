@@ -1,23 +1,24 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
-#include <rlgl.h>
 
-#include "libs/animation.h"
-#include "libs/audio.h"
-#include "libs/camera_utils.h"
-#include "libs/filesystem.h"
+#include "libs/audio/audio.h"
+#include "libs/file/filesystem.h"
+#include "libs/file/logging.h"
+#include "libs/file/script.h"
+#include "libs/gfx.h"
+#include "libs/gfx/camera_utils.h"
+#include "libs/gfx/text.h"
 #include "libs/global_data.h"
-#include "libs/input.h"
-#include "libs/logging.h"
-#include "libs/network.h"
+#include "libs/input/ime_ui.h"
+#include "libs/input/input.h"
+#include "libs/math/animation.h"
+#include "libs/network/network.h"
+#include "libs/network/skin_updater.h"
+#include "libs/parsers/song_parser.h"
 #include "libs/profiler.h"
 #include "libs/screen.h"
-#include "libs/script.h"
-#include "libs/skin_updater.h"
-#include "libs/song_parser.h"
-#include "libs/text.h"
-#include "libs/webcam.h"
+#include "libs/video/webcam.h"
 
 #ifdef YATAIDON_PLATFORM_PS5
 #include "platform/platform_ps5.h"
@@ -32,7 +33,7 @@
 #endif
 
 #ifdef PLATFORM_ANDROID
-#include "libs/sdl_main_compat.h"
+#include "libs/gfx/sdl_main_compat.h"
 #endif
 
 #include "objects/global/debug_menu.h"
@@ -58,15 +59,15 @@
 #include "scenes/song_select_practice.h"
 #include "scenes/title.h"
 
-void draw_outer_border(int screen_width, int screen_height, ray::Color last_color) {
-    DrawRectangle(-screen_width, 0, screen_width, screen_height, last_color);
-    DrawRectangle(screen_width, 0, screen_width, screen_height, last_color);
-    DrawRectangle(0, -screen_height, screen_width, screen_height, last_color);
-    DrawRectangle(0, screen_height, screen_width, screen_height, last_color);
-    DrawRectangle(-screen_width, -screen_height, screen_width, screen_height, last_color);
-    DrawRectangle(screen_width, -screen_height, screen_width, screen_height, last_color);
-    DrawRectangle(-screen_width, screen_height, screen_width, screen_height, last_color);
-    DrawRectangle(screen_width, screen_height, screen_width, screen_height, last_color);
+void draw_outer_border(int screen_width, int screen_height, Color last_color) {
+    draw_rectangle(-screen_width, 0, screen_width, screen_height, last_color);
+    draw_rectangle(screen_width, 0, screen_width, screen_height, last_color);
+    draw_rectangle(0, -screen_height, screen_width, screen_height, last_color);
+    draw_rectangle(0, screen_height, screen_width, screen_height, last_color);
+    draw_rectangle(-screen_width, -screen_height, screen_width, screen_height, last_color);
+    draw_rectangle(screen_width, -screen_height, screen_width, screen_height, last_color);
+    draw_rectangle(-screen_width, screen_height, screen_width, screen_height, last_color);
+    draw_rectangle(screen_width, screen_height, screen_width, screen_height, last_color);
 }
 
 static void draw_skin_update_status() {
@@ -79,16 +80,18 @@ static void draw_skin_update_status() {
     const float x = static_cast<float>(size);
     float y = static_cast<float>(size) * 2.0f;
 
-    const std::string skin_line =
+    std::string skin_line =
         st.current_skin.empty() ? "Checking for skin updates..." : "Updating skin: " + st.current_skin;
-    ray::Font skin_font = font_manager.get_font(skin_line, size);
-    ray::DrawTextEx(skin_font, skin_line.c_str(), ray::Vector2{x, y}, static_cast<float>(size), 1.0f, ray::YELLOW);
+    if (!st.current_skin.empty() && st.files_total > 0) {
+        skin_line += " (" + std::to_string(st.files_done) + " / " + std::to_string(st.files_total) + " files)";
+    }
+    Font skin_font = font_manager.get_font(skin_line, size);
+    draw_text_ex(skin_font, skin_line.c_str(), Vec2{x, y}, static_cast<float>(size), 1.0f, Color::YELLOW);
 
     if (!st.current_file.empty()) {
         y += static_cast<float>(size);
-        ray::Font file_font = font_manager.get_font(st.current_file, size);
-        ray::DrawTextEx(file_font, st.current_file.c_str(), ray::Vector2{x, y}, static_cast<float>(size), 1.0f,
-                        ray::WHITE);
+        Font file_font = font_manager.get_font(st.current_file, size);
+        draw_text_ex(file_font, st.current_file.c_str(), Vec2{x, y}, static_cast<float>(size), 1.0f, Color::WHITE);
     }
 }
 
@@ -252,8 +255,9 @@ Screens check_args(int argc, char* argv[]) {
     }
 
     Screens current_screen = practice ? Screens::GAME_PRACTICE : Screens::GAME;
-    global_data.session_data[(int)PlayerNum::P1].selected_song = std::move(path);
-    global_data.session_data[(int)PlayerNum::P1].selected_difficulty = selected_difficulty;
+    const auto player_index = static_cast<int>(PlayerNum::P1);
+    global_data.session_data[player_index].selected_song = std::move(path);
+    global_data.session_data[player_index].selected_difficulty = selected_difficulty;
     if (auto_play) {
         global_data.force_auto_play = true;
     }
@@ -264,12 +268,12 @@ Screens check_args(int argc, char* argv[]) {
 struct LoopState {
     std::unordered_map<Screens, std::unique_ptr<Screen>> screens;
     Screens current_screen = Screens::LOADING;
-    ray::Camera2D camera = {};
+    Camera2D camera;
     std::chrono::steady_clock::duration target_duration =
         std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / 60.0));
     std::chrono::time_point<std::chrono::steady_clock> next_frame_time = std::chrono::steady_clock::now();
     FPSCounter fps_counter;
-    ray::Color last_color = ray::BLACK;
+    Color last_color = Color::BLACK;
     double screen_fade_start = 0.0;
 };
 
@@ -406,7 +410,7 @@ static void run_frame() {
 
     g_frame_ms = get_current_ms();
 
-    ray::PollInputEvents();
+    poll_input_events();
 #if defined(YATAIDON_PLATFORM_IOS)
     if (ios_is_suspended_state()) {
         return;
@@ -420,10 +424,10 @@ static void run_frame() {
     apply_queued_window_resize();
 
     if (check_key_pressed(global_data.config->keys.fullscreen_key)) {
-        ray::ToggleFullscreen();
+        toggle_fullscreen();
         spdlog::info("Toggled fullscreen");
     } else if (check_key_pressed(global_data.config->keys.borderless_key)) {
-        ray::ToggleBorderlessWindowed();
+        toggle_borderless_windowed();
         spdlog::info("Toggled borderless windowed mode");
     }
 
@@ -440,15 +444,15 @@ static void run_frame() {
         debug_menu.update(L.camera);
     }
 
-    ray::BeginDrawing();
+    begin_drawing();
 
     if (global_data.camera.border_color != L.last_color) {
-        ray::ClearBackground(global_data.camera.border_color);
+        clear_background(global_data.camera.border_color);
         L.last_color = global_data.camera.border_color;
     }
 
-    ray::BeginMode2D(L.camera);
-    ray::BeginBlendMode(ray::BLEND_CUSTOM_SEPARATE);
+    begin_mode_2d(L.camera);
+    begin_blend_mode(blend_mode::CUSTOM_SEPARATE);
 
     auto screen_it = L.screens.find(L.current_screen);
     Screen* screen = (screen_it != L.screens.end()) ? screen_it->second.get() : nullptr;
@@ -465,9 +469,9 @@ static void run_frame() {
         screen = (screen_it != L.screens.end()) ? screen_it->second.get() : nullptr;
     }
     if (!screen) {
-        ray::EndBlendMode();
-        ray::EndMode2D();
-        ray::EndDrawing();
+        end_blend_mode();
+        end_mode_2d();
+        end_drawing();
         return;
     }
 
@@ -517,7 +521,7 @@ static void run_frame() {
             L.screen_fade_start = 0.0;
         } else {
             const float a = static_cast<float>(1.0 - (t < 0.0 ? 0.0 : t));
-            ray::DrawRectangle(0, 0, tex.screen_width, tex.screen_height, ray::Fade(ray::BLACK, a));
+            draw_rectangle(0, 0, tex.screen_width, tex.screen_height, fade(Color::BLACK, a));
         }
     }
 
@@ -547,6 +551,7 @@ static void run_frame() {
 
         debug_menu.draw();
     }
+    ime_ui_draw(L.camera);
 
     draw_outer_border(tex.screen_width, tex.screen_height, L.last_color);
 
@@ -554,28 +559,32 @@ static void run_frame() {
     const double present_begin_ms = get_current_ms();
     if (trace_frame) spdlog::info("PS5 frame {}: draw {:.1f} ms; present begin", traced_screen, present_begin_ms - draw_begin_ms);
 #endif
-    ray::EndBlendMode();
-    ray::EndMode2D();
+    end_blend_mode();
+    end_mode_2d();
     {
         PROFILE_SCOPE_N("present");
-        ray::EndDrawing();
+        end_drawing();
 
         if (!next_screen.has_value()) {
-            ray::SwapScreenBuffer();
+            swap_screen_buffer();
         }
     }
 #ifdef YATAIDON_PLATFORM_PS5
     if (trace_frame) spdlog::info("PS5 frame {}: present {:.1f} ms; frame complete", traced_screen, get_current_ms() - present_begin_ms);
 #endif
 
-    if (ray::IsKeyPressed(ray::KEY_F12)) {
+    if (key_pressed(SDL_SCANCODE_F12)) {
         static int screenshot_counter = 0;
-        ray::Image image = ray::LoadImageFromScreen();
+        Image image = load_image_from_screen();
         if (L.current_screen == Screens::RESULT && tex.options[SCO::CROP_RESULT_SCREENSHOT]) {
-            ray::ImageCrop(&image, {0, 0, (float)image.width, (float)image.height / 2.0f});
+            const auto image_width = static_cast<float>(image.width);
+            const auto crop_height = static_cast<float>(image.height / 2);
+            Image top = image_from_image(image, {0, 0, image_width, crop_height});
+            unload_image(image);
+            image = top;
         }
-        ray::ExportImage(image, ray::TextFormat("screenshot%03i.png", screenshot_counter));
-        ray::UnloadImage(image);
+        export_image(image, text_format("screenshot%03i.png", screenshot_counter));
+        unload_image(image);
         screenshot_counter++;
         spdlog::info("Screenshot saved");
     }
@@ -622,26 +631,28 @@ int main(int argc, char* argv[]) {
     init_scores_manager(global_data.config->general.score_method == ScoreMethod::GEN3);
     unsigned int flags = 0;
 #ifndef YATAIDON_PLATFORM_PS5
-    flags |= ray::FLAG_WINDOW_RESIZABLE;
+    flags |= window_flag::RESIZABLE;
 #endif
 #ifdef YATAIDON_PLATFORM_PS5
     global_data.config->video.vsync = true;
 #endif
     if (global_data.config->video.vsync) {
-        flags |= ray::FLAG_VSYNC_HINT;
+        flags |= window_flag::VSYNC;
         spdlog::info("VSync enabled");
     }
 #ifdef YATAIDON_PLATFORM_IOS
     ios_configure_window_flags(flags);
 #endif
-    ray::SetConfigFlags(flags);
-    ray::SetTraceLogLevel(ray::LOG_ERROR);
+    set_window_flags(flags);
+    quiet_raylib_log();
     setup_logging(global_data.config->general.log_level);
 
 #ifdef YATAIDON_PLATFORM_PS5
     ps5_init_window(global_data.config->video.target_fps);
 #else
-    ray::InitWindow(1280, 720, "YataiDON");
+    ime_ui_set_hint();
+    init_window(1280, 720, "YataiDON");
+    ime_ui_install();
 #endif
     try {
         load_skin();
@@ -705,19 +716,18 @@ int main(int argc, char* argv[]) {
 
 #if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(YATAIDON_PLATFORM_PS5)
     if (global_data.config->video.borderless) {
-        ray::ToggleBorderlessWindowed();
+        toggle_borderless_windowed();
         spdlog::info("Borderless window enabled");
     }
     if (global_data.config->video.fullscreen) {
-        ray::ToggleFullscreen();
+        toggle_fullscreen();
         spdlog::info("Fullscreen enabled");
     }
 #endif
 
-    rlSetBlendFactorsSeparate(RL_SRC_ALPHA, RL_ONE_MINUS_SRC_ALPHA, RL_ONE, RL_ONE_MINUS_SRC_ALPHA, RL_FUNC_ADD,
-                              RL_FUNC_ADD);
-    ray::SetExitKey(ray::KEY_NULL);
-    ray::HideCursor();
+    set_separate_alpha_blend();
+    disable_exit_key();
+    hide_cursor();
 
     L.next_frame_time = std::chrono::steady_clock::now();
 #ifdef __EMSCRIPTEN__
@@ -730,7 +740,7 @@ int main(int argc, char* argv[]) {
 #endif
     start_midi_input(global_data.config->midi);
 
-    while (!ray::WindowShouldClose()) {
+    while (!window_should_close()) {
         process_midi_events();
 
         // Consume buffered quit-key presses while editing to prevent a delayed game exit after the field closes.
@@ -759,7 +769,7 @@ int main(int argc, char* argv[]) {
 #if defined(__linux__) && !defined(__ANDROID__)
     unix_close_window();
 #else
-    ray::CloseWindow();
+    close_window();
 #endif
     spdlog::info("Game closed");
 #endif

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../libs/animation.h"
+#include "../../libs/file/script.h"
 #include "../../libs/global_data.h"
-#include "../../libs/script.h"
+#include "../../libs/math/animation.h"
 
 class ComboAnnounce : public LuaScript {
 private:

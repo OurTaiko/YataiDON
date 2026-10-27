@@ -4,7 +4,7 @@
 
 #include "../libs/playback_clock.h"
 #include "../libs/screen.h"
-#include "../libs/video.h"
+#include "../libs/video/video.h"
 #include "../objects/game/player.h"
 #include "../objects/game/result_transition.h"
 #include "../objects/game/song_info.h"

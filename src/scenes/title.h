@@ -4,10 +4,10 @@
 #include <optional>
 #include <vector>
 
-#include "../libs/filesystem.h"
+#include "../libs/file/filesystem.h"
+#include "../libs/gfx/text.h"
 #include "../libs/screen.h"
-#include "../libs/text.h"
-#include "../libs/video.h"
+#include "../libs/video/video.h"
 #include "../objects/global/allnet_indicator.h"
 #include "../objects/global/coin_overlay.h"
 #include "../objects/global/entry_overlay.h"

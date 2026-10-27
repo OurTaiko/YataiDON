@@ -4,7 +4,7 @@
 #include <cmath>
 #include <fstream>
 
-#include "../md5.h"
+#include "../math/md5.h"
 
 #pragma pack(push, 1)
 

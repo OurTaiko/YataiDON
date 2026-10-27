@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // The combo counter on the lane. The skin's Combo (game/combo.lua) owns the animations and draws it.
 class Combo : public LuaScript {

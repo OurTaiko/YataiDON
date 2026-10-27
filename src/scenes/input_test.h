@@ -31,14 +31,14 @@ public:
             // half that was actually hit - otherwise left and right don look
             // identical on the input test.
             TextureObject& drum = *t_large_drum;
-            float left = x_offset + (float)drum.x[0];
+            float left = x_offset + drum.x[0];
             float centre = left + drum.x2[0] / 2.0f;
-            float right = left + (float)drum.x2[0];
+            float right = left + drum.x2[0];
             int sx = virtual_to_screen_x(side == Side::LEFT ? left : centre);
             int ex = virtual_to_screen_x(side == Side::LEFT ? centre : right);
-            ray::BeginScissorMode(sx, 0, std::max(0, ex - sx), ray::GetRenderHeight());
+            begin_scissor_mode(sx, 0, std::max(0, ex - sx), get_render_height());
             tex.draw_texture(t_drum, {.x = x_offset, .y = y_offset, .fade = fade->attribute});
-            ray::EndScissorMode();
+            end_scissor_mode();
         } else {
             tex.draw_texture(t_drum, {.x = x_offset, .y = y_offset, .fade = fade->attribute});
         }

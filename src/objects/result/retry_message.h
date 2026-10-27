@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // "Revive!" message between a failed result and the retry mini-game (Scripts/result/result_retry_message.lua)
 class ResultRetryMessage : public LuaScript {

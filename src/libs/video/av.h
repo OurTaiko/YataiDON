@@ -1,0 +1,592 @@
+#pragma once
+
+// ---------------------------------------------------------------------------
+// av.h  –  Thin C++ wrapper around libavformat / libavcodec / libswscale
+//           designed to replace the PyAV usage in VideoPlayer.
+//
+// Link with: -lavformat -lavcodec -lavutil -lswscale
+// ---------------------------------------------------------------------------
+
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#ifndef __EMSCRIPTEN__
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/avutil.h>
+#include <libavutil/imgutils.h>
+#include <libswresample/swresample.h>
+#include <libswscale/swscale.h>
+}
+
+namespace av {
+
+    // ---------------------------------------------------------------------------
+    // Internal error helper
+    // ---------------------------------------------------------------------------
+    inline void check(int ret, const char* context = "") {
+        if (ret < 0) {
+            char buf[256];
+            av_strerror(ret, buf, sizeof(buf));
+            throw std::runtime_error(std::string(context) + ": " + buf);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // AVDecodedFrame  –  a single decoded video frame
+    // ---------------------------------------------------------------------------
+    class AVDecodedFrame {
+    public:
+        explicit AVDecodedFrame(::AVFrame* frame) : frame_(frame) {}
+
+        ~AVDecodedFrame() {
+            if (frame_) {
+                av_frame_free(&frame_);
+            }
+        }
+
+        // Non-copyable
+        AVDecodedFrame(const AVDecodedFrame&) = delete;
+        AVDecodedFrame& operator=(const AVDecodedFrame&) = delete;
+
+        // Converts the frame to packed RGBA (width * height * 4 bytes) in `out`. `ctx` is the
+        // caller's swscale context, reused across frames while size and source format hold.
+        void to_rgba(SwsContext*& ctx, std::vector<uint8_t>& out) const {
+            const int w = frame_->width, h = frame_->height;
+            ctx = sws_getCachedContext(ctx, w, h, static_cast<AVPixelFormat>(frame_->format), w, h, AV_PIX_FMT_RGBA,
+                                       SWS_BILINEAR, nullptr, nullptr, nullptr);
+            if (!ctx) {
+                throw std::runtime_error("sws_getCachedContext failed");
+            }
+            out.resize(static_cast<std::size_t>(w) * h * 4);
+            uint8_t* dst[1] = {out.data()};
+            const int dst_linesize[1] = {w * 4};
+            sws_scale(ctx, frame_->data, frame_->linesize, 0, h, dst, dst_linesize);
+        }
+
+        int width() const { return frame_->width; }
+        int height() const { return frame_->height; }
+
+    private:
+        ::AVFrame* frame_;
+    };
+
+    // ---------------------------------------------------------------------------
+    // AVFrameDecoder  –  sequential video-frame decoder (replaces the PyAV
+    //                    generator returned by container.decode(video=0))
+    // ---------------------------------------------------------------------------
+    class AVFrameDecoder {
+    public:
+        AVFrameDecoder(::AVFormatContext* fmt_ctx, int stream_index, const ::AVCodec* codec)
+            : fmt_ctx_(fmt_ctx), stream_index_(stream_index) {
+            codec_ctx_ = avcodec_alloc_context3(codec);
+            if (!codec_ctx_) {
+                throw std::runtime_error("avcodec_alloc_context3 failed");
+            }
+
+            try {
+                check(avcodec_parameters_to_context(codec_ctx_, fmt_ctx_->streams[stream_index_]->codecpar),
+                      "avcodec_parameters_to_context");
+
+                check(avcodec_open2(codec_ctx_, codec, nullptr), "avcodec_open2");
+
+                packet_ = av_packet_alloc();
+                if (!packet_) {
+                    throw std::runtime_error("av_packet_alloc failed");
+                }
+            } catch (...) {
+                avcodec_free_context(&codec_ctx_);
+                throw;
+            }
+        }
+
+        ~AVFrameDecoder() {
+            if (codec_ctx_) {
+                avcodec_free_context(&codec_ctx_);
+            }
+            if (packet_) {
+                av_packet_free(&packet_);
+            }
+        }
+
+        AVFrameDecoder(const AVFrameDecoder&) = delete;
+        AVFrameDecoder& operator=(const AVFrameDecoder&) = delete;
+
+        // Decode the next video frame into out_frame.
+        // Returns true on success, false when the stream is exhausted.
+        bool next(std::unique_ptr<AVDecodedFrame>& out_frame) {
+            while (true) {
+                // First, try to drain any frames already queued in the decoder.
+                ::AVFrame* raw = av_frame_alloc();
+                if (!raw) {
+                    throw std::runtime_error("av_frame_alloc failed");
+                }
+
+                int ret = avcodec_receive_frame(codec_ctx_, raw);
+                if (ret == 0) {
+                    out_frame = std::make_unique<AVDecodedFrame>(raw);
+                    return true;
+                }
+                av_frame_free(&raw);
+
+                if (ret == AVERROR_EOF) {
+                    return false;
+                }
+                if (ret != AVERROR(EAGAIN)) {
+                    check(ret, "avcodec_receive_frame");
+                }
+
+                // Need more packets – read from the container.
+                bool got_packet = false;
+                int read_ret = 0;
+                while ((read_ret = av_read_frame(fmt_ctx_, packet_)) >= 0) {
+                    if (packet_->stream_index == stream_index_) {
+                        check(avcodec_send_packet(codec_ctx_, packet_), "avcodec_send_packet");
+                        av_packet_unref(packet_);
+                        got_packet = true;
+                        break;
+                    }
+                    av_packet_unref(packet_);
+                }
+
+                // av_read_frame() < 0 means either a clean EOF or a real I/O/demux
+                // error; treating both as EOF silently swallowed real failures.
+                if (!got_packet && read_ret != AVERROR_EOF) {
+                    check(read_ret, "av_read_frame");
+                }
+
+                if (!got_packet) {
+                    // Flush the decoder.
+                    check(avcodec_send_packet(codec_ctx_, nullptr), "avcodec_send_packet (flush)");
+                }
+            }
+        }
+
+    private:
+        ::AVFormatContext* fmt_ctx_; // non-owning – owned by AVContainer
+        int stream_index_;
+        ::AVCodecContext* codec_ctx_ = nullptr;
+        ::AVPacket* packet_ = nullptr;
+    };
+
+    // ---------------------------------------------------------------------------
+    // AVVideoStream  –  metadata wrapper for a video stream
+    // ---------------------------------------------------------------------------
+    class AVVideoStream {
+    public:
+        explicit AVVideoStream(::AVStream* stream) : stream_(stream) {}
+
+        std::optional<float> average_rate() const {
+            if (stream_->avg_frame_rate.den == 0) {
+                return std::nullopt;
+            }
+            return static_cast<float>(stream_->avg_frame_rate.num) / static_cast<float>(stream_->avg_frame_rate.den);
+        }
+
+        int width() const { return stream_->codecpar->width; }
+        int height() const { return stream_->codecpar->height; }
+
+        int index() const { return stream_->index; }
+
+        const ::AVCodec* find_codec() const {
+            const ::AVCodec* codec = avcodec_find_decoder(stream_->codecpar->codec_id);
+            if (!codec) {
+                throw std::runtime_error("Could not find video decoder");
+            }
+            return codec;
+        }
+
+    private:
+        ::AVStream* stream_; // non-owning
+    };
+
+    // ---------------------------------------------------------------------------
+    // AVAudioStream  –  opaque wrapper for an audio stream; carries the raw
+    //                   encoded data so the Audio wrapper can mux it into a
+    //                   raylib Music stream.
+    //
+    //   If constructed via make_silent(duration_seconds), encoded_bytes() returns
+    //   a valid PCM WAV file containing silence for that duration so VideoPlayer
+    //   requires no special-casing for audio-less video files.
+    // ---------------------------------------------------------------------------
+    class AVAudioStream {
+    public:
+        // Normal constructor – wraps a real stream from the container.
+        // Stores the URL independently so encoded_bytes() can open its own
+        // AVFormatContext and never disturb the shared video context.
+        explicit AVAudioStream(::AVStream* stream, ::AVFormatContext* fmt_ctx)
+            : stream_(stream), url_(fmt_ctx && fmt_ctx->url ? fmt_ctx->url : ""), silent_(false),
+              silent_duration_(0.0) {}
+
+        // Silent constructor – no real stream, generates silence on demand.
+        static std::unique_ptr<AVAudioStream> make_silent(double duration_seconds) {
+            auto s = std::unique_ptr<AVAudioStream>(new AVAudioStream());
+            s->silent_ = true;
+            s->silent_duration_ = duration_seconds > 0.0 ? duration_seconds : 1.0;
+            return s;
+        }
+
+        int index() const { return stream_ ? stream_->index : -1; }
+        bool is_silent() const { return silent_; }
+
+        // For real streams:   returns raw encoded packets (fed to sf_open_virtual).
+        // For silent streams: returns a minimal 44100 Hz stereo 16-bit PCM WAV of silence.
+        std::vector<uint8_t> encoded_bytes() const {
+            if (silent_) {
+                return make_silence_wav(silent_duration_);
+            }
+            return remux_to_wav();
+        }
+
+        const ::AVStream* raw() const { return stream_; }
+
+    private:
+        // Private default constructor used only by make_silent().
+        AVAudioStream() : stream_(nullptr), silent_(false), silent_duration_(0.0) {}
+
+        std::vector<uint8_t> remux_to_wav() const {
+            // Open a private AVFormatContext so we never advance or corrupt the
+            // shared context that AVFrameDecoder uses for video decoding.
+            ::AVFormatContext* fmt_ctx = nullptr;
+            check(avformat_open_input(&fmt_ctx, url_.c_str(), nullptr, nullptr), "remux_to_wav: avformat_open_input");
+            check(avformat_find_stream_info(fmt_ctx, nullptr), "remux_to_wav: avformat_find_stream_info");
+
+            // Find the first audio stream in this private context.
+            int audio_idx = -1;
+            for (unsigned i = 0; i < fmt_ctx->nb_streams; ++i) {
+                if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                    audio_idx = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (audio_idx < 0) {
+                avformat_close_input(&fmt_ctx);
+                return make_silence_wav(1.0);
+            }
+            ::AVStream* astream = fmt_ctx->streams[audio_idx];
+
+            // --- Find decoder ---
+            const ::AVCodec* codec = avcodec_find_decoder(astream->codecpar->codec_id);
+            if (!codec) {
+                avformat_close_input(&fmt_ctx);
+                throw std::runtime_error("remux_to_wav: no decoder found");
+            }
+
+            ::AVCodecContext* dec_ctx = avcodec_alloc_context3(codec);
+            if (!dec_ctx) {
+                avformat_close_input(&fmt_ctx);
+                throw std::runtime_error("remux_to_wav: avcodec_alloc_context3");
+            }
+
+            check(avcodec_parameters_to_context(dec_ctx, astream->codecpar),
+                  "remux_to_wav: avcodec_parameters_to_context");
+            check(avcodec_open2(dec_ctx, codec, nullptr), "remux_to_wav: avcodec_open2");
+
+            // --- Set up SwrContext for conversion to S16 interleaved ---
+            SwrContext* swr = nullptr;
+            AVChannelLayout out_layout = AV_CHANNEL_LAYOUT_STEREO;
+            check(swr_alloc_set_opts2(&swr, &out_layout, AV_SAMPLE_FMT_S16, 44100, &dec_ctx->ch_layout,
+                                      dec_ctx->sample_fmt, dec_ctx->sample_rate, 0, nullptr),
+                  "remux_to_wav: swr_alloc_set_opts2");
+            check(swr_init(swr), "remux_to_wav: swr_init");
+
+            // --- Decode all packets ---
+            std::vector<int16_t> pcm;
+
+            ::AVPacket* pkt = av_packet_alloc();
+            ::AVFrame* frame = av_frame_alloc();
+            if (!pkt || !frame) {
+                swr_free(&swr);
+                avcodec_free_context(&dec_ctx);
+                avformat_close_input(&fmt_ctx);
+                throw std::runtime_error("remux_to_wav: alloc failed");
+            }
+
+            auto flush_decoder = [&](bool) {
+                while (true) {
+                    int ret = avcodec_receive_frame(dec_ctx, frame);
+                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                        break;
+                    }
+                    check(ret, "remux_to_wav: avcodec_receive_frame");
+
+                    int64_t out_samples = swr_get_out_samples(swr, frame->nb_samples);
+                    std::vector<int16_t> tmp(out_samples * 2);
+                    uint8_t* out_ptr = reinterpret_cast<uint8_t*>(tmp.data());
+
+                    int converted = swr_convert(swr, &out_ptr, out_samples, frame->extended_data, frame->nb_samples);
+                    if (converted > 0) {
+                        pcm.insert(pcm.end(), tmp.begin(), tmp.begin() + converted * 2);
+                    }
+
+                    av_frame_unref(frame);
+                }
+            };
+
+            while (av_read_frame(fmt_ctx, pkt) >= 0) {
+                if (pkt->stream_index == audio_idx) {
+                    avcodec_send_packet(dec_ctx, pkt);
+                    flush_decoder(false);
+                }
+                av_packet_unref(pkt);
+            }
+            avcodec_send_packet(dec_ctx, nullptr);
+            flush_decoder(true);
+
+            // Drain any remaining samples from swr
+            while (true) {
+                std::vector<int16_t> tmp(4096 * 2);
+                uint8_t* out_ptr = reinterpret_cast<uint8_t*>(tmp.data());
+                int converted = swr_convert(swr, &out_ptr, 4096, nullptr, 0);
+                if (converted <= 0) {
+                    break;
+                }
+                pcm.insert(pcm.end(), tmp.begin(), tmp.begin() + converted * 2);
+            }
+
+            av_packet_free(&pkt);
+            av_frame_free(&frame);
+            swr_free(&swr);
+            avcodec_free_context(&dec_ctx);
+            avformat_close_input(&fmt_ctx);
+
+            return make_pcm_wav(pcm, 44100, 2);
+        }
+
+        static std::vector<uint8_t> make_pcm_wav(const std::vector<int16_t>& pcm, uint32_t sample_rate,
+                                                 uint16_t channels) {
+            constexpr uint16_t bits = 16;
+            const uint16_t block_align = channels * (bits / 8);
+            const uint32_t byte_rate = sample_rate * block_align;
+            const uint32_t data_size = static_cast<uint32_t>(pcm.size()) * sizeof(int16_t);
+            const uint32_t chunk_size = 36 + data_size;
+
+            std::vector<uint8_t> wav;
+            wav.reserve(44 + data_size);
+
+            auto write_u16 = [&](uint16_t v) {
+                wav.push_back(v & 0xFF);
+                wav.push_back((v >> 8) & 0xFF);
+            };
+            auto write_u32 = [&](uint32_t v) {
+                wav.push_back(v & 0xFF);
+                wav.push_back((v >> 8) & 0xFF);
+                wav.push_back((v >> 16) & 0xFF);
+                wav.push_back((v >> 24) & 0xFF);
+            };
+            auto write_cc = [&](const char* s) {
+                wav.push_back(s[0]);
+                wav.push_back(s[1]);
+                wav.push_back(s[2]);
+                wav.push_back(s[3]);
+            };
+
+            write_cc("RIFF");
+            write_u32(chunk_size);
+            write_cc("WAVE");
+            write_cc("fmt ");
+            write_u32(16);
+            write_u16(1);
+            write_u16(channels);
+            write_u32(sample_rate);
+            write_u32(byte_rate);
+            write_u16(block_align);
+            write_u16(bits);
+            write_cc("data");
+            write_u32(data_size);
+
+            // Append PCM samples (already little-endian on x86/ARM)
+            const uint8_t* bytes = reinterpret_cast<const uint8_t*>(pcm.data());
+            wav.insert(wav.end(), bytes, bytes + data_size);
+
+            return wav;
+        }
+
+        // Builds a minimal valid PCM WAV in memory:
+        //   44100 Hz, stereo, 16-bit, all zero samples.
+        // libsndfile opens this via sf_open_virtual without complaint.
+        static std::vector<uint8_t> make_silence_wav(double duration_seconds) {
+            constexpr uint32_t sample_rate = 44100;
+            constexpr uint16_t channels = 2;
+            constexpr uint16_t bits = 16;
+            constexpr uint16_t block_align = channels * (bits / 8); // 4 bytes/frame
+            constexpr uint32_t byte_rate = sample_rate * block_align;
+
+            const uint32_t num_samples = static_cast<uint32_t>(sample_rate * duration_seconds);
+            const uint32_t data_size = num_samples * block_align;
+            const uint32_t chunk_size = 36 + data_size;
+
+            std::vector<uint8_t> wav;
+            wav.reserve(44 + data_size);
+
+            auto write_u16 = [&](uint16_t v) {
+                wav.push_back(v & 0xFF);
+                wav.push_back((v >> 8) & 0xFF);
+            };
+            auto write_u32 = [&](uint32_t v) {
+                wav.push_back(v & 0xFF);
+                wav.push_back((v >> 8) & 0xFF);
+                wav.push_back((v >> 16) & 0xFF);
+                wav.push_back((v >> 24) & 0xFF);
+            };
+            auto write_cc = [&](const char* s) {
+                wav.push_back(s[0]);
+                wav.push_back(s[1]);
+                wav.push_back(s[2]);
+                wav.push_back(s[3]);
+            };
+
+            // RIFF header
+            write_cc("RIFF");
+            write_u32(chunk_size);
+            write_cc("WAVE");
+            // fmt  chunk (16-byte PCM)
+            write_cc("fmt ");
+            write_u32(16);
+            write_u16(1); // PCM
+            write_u16(channels);
+            write_u32(sample_rate);
+            write_u32(byte_rate);
+            write_u16(block_align);
+            write_u16(bits);
+            // data chunk – all zeros = silence
+            write_cc("data");
+            write_u32(data_size);
+            wav.resize(wav.size() + data_size, 0x00);
+
+            return wav;
+        }
+
+        ::AVStream* stream_; // non-owning; nullptr for silent streams
+        std::string url_;    // file path for silent streams is ""
+        bool silent_;
+        double silent_duration_;
+    };
+
+    // ---------------------------------------------------------------------------
+    // AVStreamCollection  –  returned by AVContainer::streams()
+    // ---------------------------------------------------------------------------
+    class AVStreamCollection {
+    public:
+        explicit AVStreamCollection(::AVFormatContext* fmt_ctx) : fmt_ctx_(fmt_ctx) {}
+
+        // Returns the Nth video stream (0-indexed).
+        std::unique_ptr<AVVideoStream> video(int n = 0) const {
+            int found = 0;
+            for (unsigned i = 0; i < fmt_ctx_->nb_streams; ++i) {
+                if (fmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && found++ == n) {
+                    return std::make_unique<AVVideoStream>(fmt_ctx_->streams[i]);
+                }
+            }
+            throw std::runtime_error("av::AVStreamCollection::video: stream not found");
+        }
+
+        // Returns the Nth audio stream (0-indexed).
+        // If no audio stream exists, returns a silent synthetic stream sized to
+        // the container duration so VideoPlayer needs no special-casing.
+        std::unique_ptr<AVAudioStream> audio(int n = 0) const {
+            int found = 0;
+            for (unsigned i = 0; i < fmt_ctx_->nb_streams; ++i) {
+                if (fmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && found++ == n) {
+                    return std::make_unique<AVAudioStream>(fmt_ctx_->streams[i], fmt_ctx_);
+                }
+            }
+            // No audio stream found – synthesise silence for the video duration.
+            double duration_seconds =
+                (fmt_ctx_->duration > 0) ? static_cast<double>(fmt_ctx_->duration) / AV_TIME_BASE : 1.0;
+            return AVAudioStream::make_silent(duration_seconds);
+        }
+
+    private:
+        ::AVFormatContext* fmt_ctx_; // non-owning
+    };
+
+    // ---------------------------------------------------------------------------
+    // AVContainer  –  top-level media file handle
+    // ---------------------------------------------------------------------------
+    class AVContainer {
+    public:
+        // Factory – mirrors PyAV's av.open(path).
+        static std::unique_ptr<AVContainer> open(const std::filesystem::path& path) {
+            ::AVFormatContext* ctx = nullptr;
+            try {
+#ifdef YATAIDON_PLATFORM_PS5
+                auto input_path = std::filesystem::absolute(path);
+#else
+                const auto& input_path = path;
+#endif
+                check(avformat_open_input(&ctx, input_path.string().c_str(), nullptr, nullptr), "avformat_open_input");
+                check(avformat_find_stream_info(ctx, nullptr), "avformat_find_stream_info");
+            } catch (...) {
+                avformat_close_input(&ctx);
+                throw;
+            }
+            return std::unique_ptr<AVContainer>(new AVContainer(ctx));
+        }
+
+        ~AVContainer() { close(); }
+
+        AVContainer(const AVContainer&) = delete;
+        AVContainer& operator=(const AVContainer&) = delete;
+
+        // Duration in AV_TIME_BASE units (matches PyAV's container.duration).
+        int64_t duration() const { return fmt_ctx_ ? fmt_ctx_->duration : 0; }
+
+        // AV_TIME_BASE as a double (matches PyAV's av.time_base = 1/AV_TIME_BASE).
+        static double time_base() { return static_cast<double>(AV_TIME_BASE); }
+
+        AVStreamCollection streams() const { return AVStreamCollection(fmt_ctx_); }
+
+        // Seek to a position in seconds (0 = beginning).
+        void seek(double seconds) {
+            int64_t ts = static_cast<int64_t>(seconds * AV_TIME_BASE);
+            check(av_seek_frame(fmt_ctx_, -1, ts, seconds == 0.0 ? AVSEEK_FLAG_BACKWARD : 0), "av_seek_frame");
+        }
+
+        // Create a sequential decoder for the video stream at the given index.
+        std::unique_ptr<AVFrameDecoder> decode_video(int stream_index = 0) {
+            auto vs = streams().video(stream_index);
+            return std::make_unique<AVFrameDecoder>(fmt_ctx_, vs->index(), vs->find_codec());
+        }
+
+        void close() {
+            if (fmt_ctx_) {
+                avformat_close_input(&fmt_ctx_);
+                fmt_ctx_ = nullptr;
+            }
+        }
+
+    private:
+        explicit AVContainer(::AVFormatContext* ctx) : fmt_ctx_(ctx) {}
+        ::AVFormatContext* fmt_ctx_ = nullptr;
+    };
+
+} // namespace av
+
+#else // __EMSCRIPTEN__ — minimal stubs so headers compile without FFmpeg
+
+namespace av {
+    struct AVDecodedFrame {};
+    struct AVFrameDecoder {};
+    struct AVVideoStream {};
+    struct AVContainer {
+        void close() {}
+    };
+    struct AVAudioStream {
+        static std::unique_ptr<AVAudioStream> make_silent(double) {
+            return std::unique_ptr<AVAudioStream>(new AVAudioStream());
+        }
+        std::vector<uint8_t> encoded_bytes() const { return {}; }
+        bool is_silent() const { return true; }
+        int index() const { return -1; }
+    };
+} // namespace av
+
+#endif // __EMSCRIPTEN__

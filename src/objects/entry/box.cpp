@@ -137,6 +137,6 @@ void Box::move_down() {
 }
 
 void Box::draw(float fade, bool has_prev, bool has_next, bool disabled) {
-    call(fn_draw, "EntryBox:draw", x, left_x, right_x, is_selected, move->is_finished, (float)open->attribute, fade,
-         y_pos, has_prev, has_next, disabled);
+    call(fn_draw, "EntryBox:draw", x, left_x, right_x, is_selected, move->is_finished,
+         static_cast<float>(open->attribute), fade, y_pos, has_prev, has_next, disabled);
 }

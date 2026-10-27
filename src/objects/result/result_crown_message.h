@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 class ResultCrownMessage : public LuaScript {
     sol::protected_function fn_update, fn_draw;

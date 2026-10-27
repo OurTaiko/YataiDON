@@ -3,7 +3,7 @@
 #include "ps5_video.h"
 #include "ps5_videodec2_abi.h"
 #include "ps5_h264_annexb.h"
-#include "../libs/av.h"
+#include "../libs/video/av.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>

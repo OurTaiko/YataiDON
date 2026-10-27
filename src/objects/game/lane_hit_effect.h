@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../libs/animation.h"
-#include "../../libs/texture.h"
+#include "../../libs/gfx/texture.h"
+#include "../../libs/math/animation.h"
 #include "../enums.h"
 
 class LaneHitEffect {

@@ -34,9 +34,9 @@ void win32_install_crash_handlers();
 bool win32_precise_sleep_us(long long us);
 
 // Checks if a key is currently down using GetAsyncKeyState.
-// raylib_key: Raylib key code (KEY_A, KEY_SPACE, etc.)
+// scancode: SDL_Scancode (SDL_SCANCODE_A, SDL_SCANCODE_SPACE, etc.)
 // Returns true if the key is currently pressed.
-bool win32_is_key_down_native(int raylib_key);
+bool win32_is_key_down_native(int scancode);
 
 // Converts a filesystem::path to a string suitable for Windows APIs (CP932 for Japanese).
 std::string win32_path_to_string(const std::filesystem::path& path);

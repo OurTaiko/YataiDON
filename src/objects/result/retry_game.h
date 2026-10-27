@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 class RetryGameScene : public LuaScript {
     sol::protected_function fn_update;

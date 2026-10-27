@@ -28,7 +28,7 @@ void PracticeTimer::update(double current_ms, bool running) {
 }
 
 void PracticeTimer::draw() {
-    call(fn_draw, "PracticeTimer:draw", (int)std::ceil(std::max(remaining_ms, 0.0) / 1000.0), up_ms);
+    call(fn_draw, "PracticeTimer:draw", static_cast<int>(std::ceil(std::max(remaining_ms, 0.0) / 1000.0)), up_ms);
 }
 
 void PracticeTimer::begin_session(double current_ms) {

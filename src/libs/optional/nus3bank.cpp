@@ -250,7 +250,7 @@ namespace gen4 {
                 }
                 for (uint32_t s = 0; s < block_frames * 14; s++) {
                     for (int c = 0; c < channels; c++) {
-                        out.samples.push_back((float)pcm[c][s] / 32768.0f);
+                        out.samples.push_back(pcm[c][s] / 32768.0f);
                     }
                 }
             }
@@ -333,7 +333,7 @@ namespace gen4 {
 
             for (int s = 0; s < samples_per_frame; s++) {
                 for (int c = 0; c < info.channels; c++) {
-                    out.samples.push_back((float)pcm[c][s] / 32768.0f);
+                    out.samples.push_back(pcm[c][s] / 32768.0f);
                 }
             }
         }

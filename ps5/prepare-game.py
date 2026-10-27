@@ -1,5 +1,6 @@
 """Fetch the additional pinned, public sources for the PS5 game build."""
 import hashlib
+import tarfile
 from pathlib import Path
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ import zipfile
 
 VENDOR = Path(__file__).resolve().parent / "vendor"
 DEPS = {
+    "libebur128": ("jiixyj/libebur128", "67b33abe1558160ed76ada1322329b0e9e058b02"),
     "rapidjson": ("Tencent/rapidjson", "24b5e7a8b27f42fa16b96fc70aade9106cf7102f"),
     "tomlplusplus": ("marzer/tomlplusplus", "30172438cee64926dc41fdd9c11fb3ba5b2ba9de"),
     "spdlog": ("gabime/spdlog", "f355b3d58f7067eee1706ff3c801c2361011f3d5"),
@@ -30,6 +32,17 @@ def main():
         actual = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
         if actual != revision:
             raise RuntimeError(f"Unexpected revision in {path}; existing sources were preserved")
+    bgfx = VENDOR / "bgfx.cmake"
+    if not bgfx.exists():
+        archive = VENDOR / "bgfx.cmake.v1.167.9590-598.tar.gz"
+        urllib.request.urlretrieve(
+            "https://github.com/bkaradzic/bgfx.cmake/releases/download/v1.167.9590-598/bgfx.cmake.v1.167.9590-598.tar.gz",
+            archive)
+        if hashlib.sha256(archive.read_bytes()).hexdigest() != "a0cab59dc46776e0155ce8ad415e595fc6cc7d5b17fe66fd5c96f330540174df":
+            raise RuntimeError("bgfx release checksum mismatch")
+        with tarfile.open(archive) as source:
+            source.extractall(VENDOR, filter="data")
+    subprocess.run(["python3", str(VENDOR.parent / "tools/patch-bgfx.py"), str(bgfx)], check=True)
     sqlite = VENDOR / "sqlite"
     if not (sqlite / "sqlite3.c").exists():
         archive = VENDOR / "sqlite-amalgamation-3500400.zip"

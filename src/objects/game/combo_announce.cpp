@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-#include "../../libs/audio.h"
+#include "../../libs/audio/audio.h"
 
 ComboAnnounce::ComboAnnounce(int combo, double current_ms, PlayerNum player_num)
     : combo(combo), wait(current_ms), player_num(player_num) {

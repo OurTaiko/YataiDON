@@ -6,7 +6,7 @@ extern int __real_sceVideoOutClose(int32_t);
 extern int sceVideoOutIsOutputSupported(int32_t, uint32_t, const void *, const void *, const void *);
 extern int sceVideoOutConfigureOutput(int32_t, uint32_t, const void *, const void *, const void *);
 extern int sceVideoOutWaitVblank(int32_t);
-extern unsigned ps5_scanout_fps, ps5_scanout_active_fps;
+static unsigned ps5_scanout_fps = 60, ps5_scanout_active_fps = 60;
 static int display_handle = -1;
 static int changed_live;
 
@@ -16,7 +16,7 @@ int __wrap_sceVideoOutOpen(int32_t user, int32_t type, int32_t index, const void
     return handle;
 }
 
-/* Called on the render thread after glFinish; no context or assets are lost. */
+/* Called on the render thread after draining GPU work; no context or assets are lost. */
 int ps5_set_output_refresh(int hz) {
     if (display_handle < 0 || (hz != 60 && hz != 120)) return -1;
     const unsigned previous = ps5_scanout_active_fps;

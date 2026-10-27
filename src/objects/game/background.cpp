@@ -1,6 +1,6 @@
 #include "background.h"
 
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 Background::Background(PlayerNum player_num, float bpm, const std::string& scene_preset) {
     if (!script_manager.lua) {
@@ -80,6 +80,8 @@ void Background::update(double current_ms, float bpm) {
     if (!fn_update.valid()) {
         return;
     }
+    PROFILE_SCOPE_N("lua");
+    PROFILE_ZONE_NAME(std::string_view("Background:update"));
     auto result = fn_update(lua_object, current_ms, bpm);
     if (!result.valid()) {
         sol::error err = result;
@@ -249,6 +251,8 @@ void Background::draw_back() {
     if (!fn_draw_back.valid()) {
         return;
     }
+    PROFILE_SCOPE_N("lua");
+    PROFILE_ZONE_NAME(std::string_view("Background:draw_back"));
     auto result = fn_draw_back(lua_object);
     if (!result.valid()) {
         sol::error err = result;
@@ -260,6 +264,8 @@ void Background::draw_fore() {
     if (!fn_draw_fore.valid()) {
         return;
     }
+    PROFILE_SCOPE_N("lua");
+    PROFILE_ZONE_NAME(std::string_view("Background:draw_fore"));
     auto result = fn_draw_fore(lua_object);
     if (!result.valid()) {
         sol::error err = result;

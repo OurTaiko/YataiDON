@@ -1,11 +1,12 @@
 #include "player.h"
 
 #include <algorithm>
+#include <iterator>
 
-#include "../../libs/audio.h"
-#include "../../libs/input.h"
-#include "../../libs/scores.h"
-#include "../../libs/text.h"
+#include "../../libs/audio/audio.h"
+#include "../../libs/file/scores.h"
+#include "../../libs/gfx/text.h"
+#include "../../libs/input/input.h"
 #include "song_select_script.h"
 
 void SongSelectPlayer::try_lua_selector(bool is_half, float fade_in, int pass) {
@@ -44,13 +45,13 @@ SongSelectPlayer::SongSelectPlayer(PlayerNum player_num) : player_num(player_num
     }
     chara->set_anim(AnimIndex::DON_SELECT_LOOP);
 
-    diff_selector_move_1 = (MoveAnimation*)tex.get_animation(26, true);
-    diff_selector_move_2 = (MoveAnimation*)tex.get_animation(27, true);
-    selected_diff_bounce = (MoveAnimation*)tex.get_animation(33, true);
-    selected_diff_fadein = (FadeAnimation*)tex.get_animation(34, true);
-    selected_diff_highlight_fade = (FadeAnimation*)tex.get_animation(35, true);
-    selected_diff_text_resize = (TextureResizeAnimation*)tex.get_animation(36, true);
-    selected_diff_text_fadein = (FadeAnimation*)tex.get_animation(37, true);
+    diff_selector_move_1 = dynamic_cast<MoveAnimation*>(tex.get_animation(26, true));
+    diff_selector_move_2 = dynamic_cast<MoveAnimation*>(tex.get_animation(27, true));
+    selected_diff_bounce = dynamic_cast<MoveAnimation*>(tex.get_animation(33, true));
+    selected_diff_fadein = dynamic_cast<FadeAnimation*>(tex.get_animation(34, true));
+    selected_diff_highlight_fade = dynamic_cast<FadeAnimation*>(tex.get_animation(35, true));
+    selected_diff_text_resize = dynamic_cast<TextureResizeAnimation*>(tex.get_animation(36, true));
+    selected_diff_text_fadein = dynamic_cast<FadeAnimation*>(tex.get_animation(37, true));
 }
 
 void SongSelectPlayer::update(double current_time) {
@@ -90,7 +91,7 @@ void SongSelectPlayer::update(double current_time) {
 }
 
 bool SongSelectPlayer::is_voice_playing() {
-    return audio.is_sound_playing("voice_start_song_" + std::to_string((int)player_num) + "p");
+    return audio.is_sound_playing("voice_start_song_" + std::to_string(static_cast<int>(player_num)) + "p");
 }
 
 void SongSelectPlayer::init_diff_cursor() {
@@ -108,12 +109,12 @@ void SongSelectPlayer::init_diff_cursor() {
         song->is_ura = is_ura;
     }
 
-    int last = global_data.last_difficulty[(int)player_num];
-    if (last < (int)Difficulty::EASY) {
+    int last = global_data.last_difficulty[static_cast<int>(player_num)];
+    if (last < static_cast<int>(Difficulty::EASY)) {
         return;
     }
 
-    Difficulty desired = (Difficulty)std::min(last, (int)Difficulty::ONI);
+    Difficulty desired = static_cast<Difficulty>(std::min(last, static_cast<int>(Difficulty::ONI)));
 
     // the oni slot holds ura in ura mode
     auto slot = [&](Difficulty d) -> Difficulty {
@@ -178,7 +179,7 @@ void SongSelectPlayer::sync_ura(bool ura) {
     is_ura = ura;
     ura_toggle = 0;
     if (selected_difficulty == Difficulty::ONI || selected_difficulty == Difficulty::URA) {
-        selected_difficulty = Difficulty(7 - (int)selected_difficulty);
+        selected_difficulty = Difficulty(7 - static_cast<int>(selected_difficulty));
     }
 }
 
@@ -186,15 +187,16 @@ SongSelectState SongSelectPlayer::select_song() {
     audio.play_sound("don", VolumePreset::SOUND);
     BaseBox* item = navigator.get_current_item();
     if (navigator.is_directory(item) && item->genre_index == GenreIndex::DAN) {
-        global_data.session_data[(int)player_num].selected_dan_folder = item->path;
-        if ((int)player_num >= 0 && (int)player_num < (int)global_data.dan_folder.size()) {
-            global_data.dan_folder[(int)player_num] = item->path;
+        const auto player_index = static_cast<int>(player_num);
+        global_data.session_data[player_index].selected_dan_folder = item->path;
+        if (player_index >= 0 && player_index < std::ssize(global_data.dan_folder)) {
+            global_data.dan_folder[player_index] = item->path;
         }
         return SongSelectState::DAN_SELECTED;
     }
 
     if (navigator.is_song(item)) {
-        SongBox* song_item = (SongBox*)item;
+        SongBox* song_item = dynamic_cast<SongBox*>(item);
         curr_diffs = song_item->get_diffs();
         if (curr_diffs.empty()) {
             return SongSelectState::BROWSING;
@@ -215,18 +217,18 @@ SongSelectState SongSelectPlayer::select_song() {
 
 SongSelectState SongSelectPlayer::handle_input_browsing(double current_ms) {
 
-    bool l_kat = is_l_kat_pressed(player_num) || ray::IsKeyPressed(ray::KEY_LEFT);
-    bool r_kat = is_r_kat_pressed(player_num) || ray::IsKeyPressed(ray::KEY_RIGHT);
-    bool l_don = is_l_don_pressed(player_num) || ray::IsKeyPressed(ray::KEY_ENTER);
-    bool r_don = is_r_don_pressed(player_num) || ray::IsKeyPressed(ray::KEY_ENTER);
-    float wheel = ray::GetMouseWheelMove();
+    bool l_kat = is_l_kat_pressed(player_num) || key_pressed(SDL_SCANCODE_LEFT);
+    bool r_kat = is_r_kat_pressed(player_num) || key_pressed(SDL_SCANCODE_RIGHT);
+    bool l_don = is_l_don_pressed(player_num) || key_pressed(SDL_SCANCODE_RETURN);
+    bool r_don = is_r_don_pressed(player_num) || key_pressed(SDL_SCANCODE_RETURN);
+    float wheel = mouse_wheel();
 
-    if (ray::IsKeyPressed(ray::KEY_F5)) {
+    if (key_pressed(SDL_SCANCODE_F5)) {
         navigator.load_current_directory(navigator.current_path);
     }
 
     bool navigated = false;
-    if (ray::IsKeyPressed(ray::KEY_LEFT_CONTROL) || (l_kat && current_ms <= last_moved + 50)) {
+    if (key_pressed(SDL_SCANCODE_LCTRL) || (l_kat && current_ms <= last_moved + 50)) {
         audio.play_sound("skip", VolumePreset::SOUND);
         navigator.skip_left();
         last_moved = current_ms;
@@ -238,7 +240,7 @@ SongSelectState SongSelectPlayer::handle_input_browsing(double current_ms) {
         navigated = true;
     }
 
-    if (ray::IsKeyPressed(ray::KEY_RIGHT_CONTROL) || (r_kat && current_ms <= last_moved + 50)) {
+    if (key_pressed(SDL_SCANCODE_RCTRL) || (r_kat && current_ms <= last_moved + 50)) {
         audio.play_sound("skip", VolumePreset::SOUND);
         navigator.skip_right();
         last_moved = current_ms;
@@ -269,7 +271,7 @@ SongSelectState SongSelectPlayer::handle_input_browsing(double current_ms) {
         next_repeat = current_ms + 70;
     }
 
-    if (ray::IsKeyPressed(ray::KEY_SPACE)) {
+    if (key_pressed(SDL_SCANCODE_SPACE)) {
         BaseBox* item = navigator.get_current_item();
         if (navigator.is_song(item)) {
             navigator.toggle_favorite(static_cast<SongBox*>(item));
@@ -281,7 +283,7 @@ SongSelectState SongSelectPlayer::handle_input_browsing(double current_ms) {
         BaseBox* item = navigator.get_current_item();
         if (navigator.is_directory(item) && item->collection == COLLECTIONS[5]) {
             search_guard = true;
-            search_guard_until_ms = ray::GetTime() * 1000.0 + 150.0;
+            search_guard_until_ms = get_current_ms() + 150.0;
             return SongSelectState::SEARCHING;
         }
         return select_song();
@@ -314,12 +316,13 @@ std::optional<std::pair<int, int>> SongSelectPlayer::handle_input_diff_sort(Diff
 // Strip leading / trailing blanks: ASCII whitespace and the ideographic space U+3000.
 static std::string trim_search(std::string s) {
     auto blank_at = [&](size_t i, size_t& len) {
-        unsigned char b = (unsigned char)s[i];
+        unsigned char b = static_cast<unsigned char>(s[i]);
         if (b == ' ' || b == '\t' || b == '\r' || b == '\n') {
             len = 1;
             return true;
         }
-        if (b == 0xE3 && i + 2 < s.size() && (unsigned char)s[i + 1] == 0x80 && (unsigned char)s[i + 2] == 0x80) {
+        if (b == 0xE3 && i + 2 < s.size() && static_cast<unsigned char>(s[i + 1]) == 0x80 &&
+            static_cast<unsigned char>(s[i + 2]) == 0x80) {
             len = 3;
             return true;
         }
@@ -349,7 +352,7 @@ static std::string trim_search(std::string s) {
 static bool any_don_key_down(PlayerNum player_num) {
     const auto& c = *global_data.config;
     auto down = [](const std::vector<int>& keys) {
-        return std::ranges::any_of(keys, [](int k) { return ray::IsKeyDown(k); });
+        return std::ranges::any_of(keys, [](int k) { return key_down(k); });
     };
     if (player_num != PlayerNum::P2 && (down(c.keys_1p.left_don) || down(c.keys_1p.right_don))) {
         return true;
@@ -365,9 +368,9 @@ std::optional<std::string> SongSelectPlayer::handle_input_search() {
         // The don press is seen by the input thread a few ms before raylib's own key state
         // and the typed character catch up, so the opening keystroke (F/J) would land in the
         // query. Swallow typed input for a short grace period and until every don key is up.
-        while (ray::GetCharPressed() > 0) {
+        while (char_pressed() > 0) {
         }
-        if (ray::GetTime() * 1000.0 >= search_guard_until_ms && !any_don_key_down(player_num)) {
+        if (get_current_ms() >= search_guard_until_ms && !any_don_key_down(player_num)) {
             search_guard = false;
         }
         return std::nullopt;
@@ -449,7 +452,8 @@ SongSelectState SongSelectPlayer::handle_input_selecting() {
             } else if (selected_difficulty >= Difficulty::EASY) {
                 voice_played = true;
                 start_background_diffs();
-                audio.play_sound("voice_start_song_" + std::to_string((int)player_num) + "p", VolumePreset::VOICE);
+                audio.play_sound("voice_start_song_" + std::to_string(static_cast<int>(player_num)) + "p",
+                                 VolumePreset::VOICE);
             } else if (selected_difficulty == Difficulty::BACK) {
                 is_ready = true;
             }
@@ -475,7 +479,7 @@ void SongSelectPlayer::navigate_difficulty_left() {
     } else if (selected_difficulty == Difficulty::NEIRO || selected_difficulty == Difficulty::MODIFIER) {
         diff_selector_move_2->start();
         prev_diff = selected_difficulty;
-        selected_difficulty = Difficulty((int)selected_difficulty - 1);
+        selected_difficulty = Difficulty(static_cast<int>(selected_difficulty) - 1);
     } else if (selected_difficulty == Difficulty::BACK) {
         // no-op
     } else if (!std::ranges::contains(curr_diffs, selected_difficulty)) {
@@ -519,7 +523,7 @@ void SongSelectPlayer::navigate_difficulty_right() {
         diff_selector_move_1->start();
     } else if (selected_difficulty == Difficulty::MODIFIER || selected_difficulty == Difficulty::BACK) {
         prev_diff = selected_difficulty;
-        selected_difficulty = Difficulty((int)selected_difficulty + 1);
+        selected_difficulty = Difficulty(static_cast<int>(selected_difficulty) + 1);
         diff_selector_move_2->start();
     } else if (selected_difficulty < curr_diffs.back()) {
         prev_diff = selected_difficulty;
@@ -533,7 +537,7 @@ void SongSelectPlayer::toggle_ura_mode() {
     ura_toggle = 0;
     is_ura = !is_ura;
     audio.play_sound("ura_switch", VolumePreset::SOUND);
-    selected_difficulty = Difficulty(7 - (int)selected_difficulty);
+    selected_difficulty = Difficulty(7 - static_cast<int>(selected_difficulty));
     ura_switch.emplace();
     ura_switch->start(is_ura);
     SongBox* song = dynamic_cast<SongBox*>(navigator.get_current_item());

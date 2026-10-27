@@ -11,7 +11,7 @@
 #include <emscripten.h>
 #include <emscripten/html5.h>
 
-#include "../libs/sdl_compat.h"
+#include "../libs/gfx/sdl_compat.h"
 #endif
 
 namespace {

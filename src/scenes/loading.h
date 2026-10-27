@@ -16,7 +16,7 @@ private:
     std::atomic<float> progress{0.0f};
     std::vector<fs::path> songs;
 
-    ray::Rectangle progress_bar{};
+    Rect progress_bar;
 
     TextureObject* t_warning = nullptr;
 

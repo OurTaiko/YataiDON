@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../libs/texture.h"
+#include "../../libs/gfx/texture.h"
 #include "../global/chara_3d.h"
 #include "../global/nameplate.h"
 #include "diff_sort.h"

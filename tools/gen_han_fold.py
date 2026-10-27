@@ -1,4 +1,4 @@
-"""Generate src/libs/han_fold_table.h (usage: python tools/gen_han_fold.py [out.h]): code point -> canonical (Japanese shinjitai) form.
+"""Generate src/libs/gfx/han_fold_table.h (usage: python tools/gen_han_fold.py [out.h]): code point -> canonical (Japanese shinjitai) form.
 Sources: OpenCC STCharacters.txt (simplified -> traditional, first candidate) and
 JPShinjitaiCharacters.txt (shinjitai -> kyujitai variants, reversed here)."""
 import os
@@ -6,7 +6,7 @@ import sys
 
 here = os.path.dirname(os.path.abspath(__file__))
 D = os.path.join(here, 'opencc_data')
-out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, '..', 'src', 'libs', 'han_fold_table.h')
+out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, '..', 'src', 'libs', 'gfx', 'han_fold_table.h')
 os.makedirs(D, exist_ok=True)
 for name in ('STCharacters.txt', 'JPShinjitaiCharacters.txt'):
     if not os.path.exists(os.path.join(D, name)):

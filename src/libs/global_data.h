@@ -4,14 +4,17 @@
 #include <cassert>
 #include <cmath>
 #include <filesystem>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include "config.h"
-#include "ray.h" // IWYU pragma: keep
+#include "file/config.h"
+#include "gfx.h" // IWYU pragma: keep
+#include "gfx/color_utils.h"
 
 namespace fs = std::filesystem;
 
@@ -73,11 +76,11 @@ struct Exam {
     bool per_song() const { return !song_red.empty(); }
     // The exam as it applies to song i: red/gold swapped for that song's pair.
     Exam for_song(int i) const {
-        assert(!per_song() || (i >= 0 && i < (int)song_red.size()));
+        assert(!per_song() || (i >= 0 && i < std::ssize(song_red)));
         Exam ex = *this;
-        if (per_song() && i >= 0 && i < (int)song_red.size()) {
+        if (per_song() && i >= 0 && i < std::ssize(song_red)) {
             ex.red = song_red[i];
-            ex.gold = i < (int)song_gold.size() ? song_gold[i] : song_red[i];
+            ex.gold = i < std::ssize(song_gold) ? song_gold[i] : song_red[i];
         }
         // the view of one song is a plain pair again (captions print a single number)
         ex.song_red.clear();
@@ -86,8 +89,8 @@ struct Exam {
     }
 };
 
-inline std::string dan_bar_state(const Exam& exam, int value, bool live = false, bool near_end = false,
-                                 bool just_before_end = false) {
+inline std::string_view dan_bar_state(const Exam& exam, int value, bool live = false, bool near_end = false,
+                                      bool just_before_end = false) {
     const bool down = (exam.range == "less");
     // CheckMax
     if (exam.gold > 0 && ((down && value < exam.gold) || (!down && value >= exam.gold))) {
@@ -102,7 +105,7 @@ inline std::string dan_bar_state(const Exam& exam, int value, bool live = false,
         }
         // fall through to the flat palette -- no `max` during play
     }
-    int gauge = (exam.red > 0) ? (int)std::floor(100.0 * (double)value / (double)exam.red) : 100;
+    int gauge = (exam.red > 0) ? static_cast<int>(std::floor(100.0 * value / exam.red)) : 100;
     gauge = std::clamp(gauge, 0, 100);
     if (down) {
         gauge = 100 - gauge;
@@ -120,7 +123,7 @@ inline std::string dan_bar_state(const Exam& exam, int value, bool live = false,
         return "up_100";
     }
     const int good =
-        (exam.red > 0 && exam.gold > 0) ? 100 - (int)std::floor(100.0 * (double)exam.gold / (double)exam.red) : 100;
+        (exam.red > 0 && exam.gold > 0) ? 100 - static_cast<int>(std::floor(100.0 * exam.gold / exam.red)) : 100;
     if (gauge < 30) {
         return "down_80";
     }
@@ -219,9 +222,9 @@ struct SessionData {
     std::string replay_username;
     std::string replay_title;
     int replay_title_bg = 0;
-    ray::Color replay_chara_color_1 = ray::Color{0x68, 0xBF, 0xC0, 0xFF};
-    ray::Color replay_chara_color_2 = ray::Color{0xF9, 0x47, 0x28, 0xFF};
-    ray::Color replay_chara_color_3 = ray::Color{0xF9, 0xF0, 0xE1, 0xFF};
+    Color replay_chara_color_1 = Color{0x68, 0xBF, 0xC0, 0xFF};
+    Color replay_chara_color_2 = Color{0xF9, 0x47, 0x28, 0xFF};
+    Color replay_chara_color_3 = Color{0xF9, 0xF0, 0xE1, 0xFF};
     int replay_chara_head_index = 0;
     int replay_chara_body_index = 0;
     int replay_chara_cos_index = 0;
@@ -229,12 +232,12 @@ struct SessionData {
 };
 
 struct CameraConfig {
-    ray::Vector2 offset = {0.0f, 0.0f};
+    Vec2 offset = {0.0f, 0.0f};
     float zoom = 1.0f;
     float h_scale = 1.0f;
     float v_scale = 1.0f;
     float rotation = 0.0f;
-    ray::Color border_color = ray::BLACK;
+    Color border_color = Color::BLACK;
 };
 
 class PracticeTimer;
@@ -245,7 +248,7 @@ struct GlobalData {
     std::string current_screen = "LOADING";
     std::string previous_screen;
     bool in_transition = false;
-    std::string title_state = "";
+    std::string title_state;
     double title_state_start_ms = 0.0;
     int live_skip_count = -1;
     bool live_skip_used = false;

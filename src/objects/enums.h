@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <iterator>
 #include <map>
 #include <set>
 #include <string>
@@ -55,7 +56,7 @@ inline std::string branch_diff_to_string(BranchDifficulty difficulty) {
         "master"  // 2
     };
     int index = static_cast<int>(difficulty);
-    if (index < 0 || index >= (int)names.size()) {
+    if (index < 0 || index >= std::ssize(names)) {
         return names[0];
     }
     return names[index];

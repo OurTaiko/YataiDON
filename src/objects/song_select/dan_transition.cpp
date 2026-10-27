@@ -21,8 +21,8 @@ bool DanTransition::start() {
     if (!tex.has_texture("dan_transition/flash") || !don_rise || !emblem_fade || !emblem_spin || !flash) {
         don_rise = emblem_spin = nullptr, emblem_fade = flash = nullptr;
     }
-    for (BaseAnimation* a : {(BaseAnimation*)slide_in, (BaseAnimation*)don_rise, (BaseAnimation*)emblem_fade,
-                             (BaseAnimation*)emblem_spin, (BaseAnimation*)flash}) {
+    BaseAnimation* animations[] = {slide_in, don_rise, emblem_fade, emblem_spin, flash};
+    for (BaseAnimation* a : animations) {
         if (a) {
             a->start();
         }
@@ -47,8 +47,8 @@ void DanTransition::update(double current_ms) {
         start_ms = current_ms;
     }
     last_ms = current_ms;
-    for (BaseAnimation* a : {(BaseAnimation*)slide_in, (BaseAnimation*)don_rise, (BaseAnimation*)emblem_fade,
-                             (BaseAnimation*)emblem_spin, (BaseAnimation*)flash}) {
+    BaseAnimation* animations[] = {slide_in, don_rise, emblem_fade, emblem_spin, flash};
+    for (BaseAnimation* a : animations) {
         if (a) {
             a->update(current_ms);
         }
@@ -60,7 +60,7 @@ bool DanTransition::is_started() const {
 }
 
 bool DanTransition::is_finished() const {
-    return started && (flash ? (BaseAnimation*)flash : (BaseAnimation*)slide_in)->is_finished;
+    return started && (flash ? flash->is_finished : slide_in->is_finished);
 }
 
 double DanTransition::duration() const {
@@ -82,14 +82,14 @@ void DanTransition::draw() {
     if (!started || !slide_in) {
         return;
     }
-    tex.draw_texture(t_background, {.x2 = (float)slide_in->attribute});
+    tex.draw_texture(t_background, {.x2 = static_cast<float>(slide_in->attribute)});
     if (!flash) {
         return;
     }
-    tex.draw_texture(t_don, {.y = (float)don_rise->attribute});
+    tex.draw_texture(t_don, {.y = static_cast<float>(don_rise->attribute)});
     // texture.json x, y is the emblem's centre, which is also the pivot
     tex.draw_texture(t_emblem, {.origin = {t_emblem->width / 2.0f, t_emblem->height / 2.0f},
-                                .rotation = (float)emblem_spin->attribute,
+                                .rotation = static_cast<float>(emblem_spin->attribute),
                                 .fade = emblem_fade->attribute});
     tex.draw_texture(t_flash, {.fade = flash->attribute});
 }

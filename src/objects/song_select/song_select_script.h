@@ -1,5 +1,5 @@
 #pragma once
-#include "../../libs/script.h"
+#include "../../libs/file/script.h"
 
 // function `fn_name` of the Lua module `module`, searched along the skin chain; invalid if absent
 sol::protected_function load_skin_module_fn(const char* module, const char* fn_name);

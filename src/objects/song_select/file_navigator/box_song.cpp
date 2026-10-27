@@ -1,9 +1,10 @@
 #include "box_song.h"
 
+#include <iterator>
 #include <thread>
 
-#include "../../../libs/audio.h"
-#include "../../../libs/text.h"
+#include "../../../libs/audio/audio.h"
+#include "../../../libs/gfx/text.h"
 #include "navigator.h"
 #ifdef YATAIDON_PLATFORM_PS5
 #include "../../../libs/latest_worker.h"
@@ -50,10 +51,11 @@ SongBox::SongBox(const fs::path& path, const BoxDef& box_def, SongParser parser)
     auto& subtitles = parser.metadata.subtitle;
     text_subtitle = localized_text(subtitles, lang, LocalizedTextFallback::ENGLISH_OR_FIRST);
 
+    audio.queue_song_loudness(parser.metadata.wave);
     this->parser = std::move(parser);
 
     is_favorite = false;
-    diff_fade_in = (FadeAnimation*)tex.get_animation(12);
+    diff_fade_in = dynamic_cast<FadeAnimation*>(tex.get_animation(12));
     refresh_scores();
 }
 
@@ -82,7 +84,7 @@ void SongBox::refresh_scores() {
 }
 
 std::string SongBox::hash_for(int difficulty) {
-    if (difficulty < 0 || difficulty >= (int)hashes.size()) {
+    if (difficulty < 0 || difficulty >= std::ssize(hashes)) {
         return "";
     }
     if (hashes[difficulty].empty()) {
@@ -97,7 +99,7 @@ std::string SongBox::hash_for(int difficulty) {
 void SongBox::reset() {
     if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
     BaseBox::reset();
-    diff_fade_in = (FadeAnimation*)tex.get_animation(12);
+    diff_fade_in = dynamic_cast<FadeAnimation*>(tex.get_animation(12));
     if (audio.is_music_stream_valid("preview")) {
         audio.unload_music_stream("preview");
     }
@@ -123,26 +125,25 @@ std::vector<Difficulty> SongBox::get_diffs() {
 
 void SongBox::preregister_text() {
     BaseBox::preregister_text();
-    float base_sub_font = (float)tex.get_skin_config(SC::SONG_SELECT_BOX_SUBTITLE)->font_size;
+    float base_sub_font = tex.get_skin_config(SC::SONG_SELECT_BOX_SUBTITLE)->font_size;
     float sub_font = utf8_char_count(text_subtitle) >= 30 ? base_sub_font - 10.0f * tex.screen_scale : base_sub_font;
-    font_manager.register_text(text_subtitle, (int)sub_font);
-    float base_name_font = (float)tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
+    font_manager.register_text(text_subtitle, static_cast<int>(sub_font));
+    float base_name_font = tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
     float name_font = utf8_char_count(text_name) >= 30 ? base_name_font - 10.0f * tex.screen_scale : base_name_font;
-    font_manager.register_text(text_name, (int)name_font);
+    font_manager.register_text(text_name, static_cast<int>(name_font));
     font_manager.register_text("BPM\n0123456789", tex.get_skin_config(SC::SONG_SELECT_BOX_BPM)->font_size);
 }
 
 void SongBox::load_text() {
     BaseBox::load_text();
     bpm_text = make_unique<OutlinedText>("BPM\n" + std::to_string(static_cast<int>(parser.metadata.bpm)),
-                                         tex.get_skin_config(SC::SONG_SELECT_BOX_BPM)->font_size, ray::WHITE,
-                                         ray::BLACK, false);
+                                         tex.get_skin_config(SC::SONG_SELECT_BOX_BPM)->font_size, Color::WHITE,
+                                         Color::BLACK, false);
     if (exists(parser.metadata.preimage)) {
         if (preimage.has_value()) {
-            ray::UnloadTexture(preimage.value());
+            unload_texture(preimage.value());
         }
-        preimage = ray::LoadTexture(parser.metadata.preimage.string().c_str());
-        set_preview_texture_filter(&preimage.value());
+        preimage = load_texture_mipmapped(parser.metadata.preimage.string().c_str());
     }
     text_loaded = true;
 }
@@ -154,6 +155,7 @@ void SongBox::update(double current_time) {
     // update() runs every frame for every box of the list: the audio file is looked at once,
     // when this box is first opened, instead of building paths / stat-ing it every frame
     if (yellow_box_active && wave_kind == WaveKind::UNKNOWN) {
+        audio.queue_song_loudness(parser.metadata.wave, true);
         const auto wave_ext = parser.metadata.wave.extension();
         const bool bank = wave_ext == ".nus3bank" || wave_ext == ".nub";
         std::error_code ec;
