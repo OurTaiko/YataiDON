@@ -31,11 +31,11 @@ Player::Player(std::optional<SongParser>& parser_ref, PlayerNum player_num_param
         note_tex_ids[t] = tex.has_texture(name) ? tex.get_texture(name) : nullptr;
     }
 
-    if (parser.has_value() && !parser->metadata.course_data.empty()) {
-        if (parser->metadata.course_data[difficulty].is_branching) {
-            branch_indicator = BranchIndicator();
-        }
+    if (parser.has_value() && !parser->metadata.course_data.empty() &&
+        parser->metadata.course_data[difficulty].is_branching) {
+        branch_indicator = BranchIndicator();
     }
+
     std::string player_id = get_player_id(player_num);
     auto pd = scores_manager.get_player_data(player_id);
     nameplate = Nameplate(pd ? pd->username : "", pd ? pd->title : "", global_data.player_num, pd ? pd->dan : -1,
@@ -1433,10 +1433,8 @@ void Player::note_correct(const Note& note, double current_ms) {
         other_notes.pop_front();
     }
 
-    if (note.type == NoteType::BALLOON_HEAD || note.type == NoteType::KUSUDAMA) {
-        if (!other_notes.empty()) {
-            other_notes.pop_front();
-        }
+    if ((note.type == NoteType::BALLOON_HEAD || note.type == NoteType::KUSUDAMA) && !other_notes.empty()) {
+        other_notes.pop_front();
     }
 
     if (note.type < NoteType::BALLOON_HEAD) {

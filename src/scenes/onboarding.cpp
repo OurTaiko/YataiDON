@@ -8,8 +8,6 @@
 #include "../libs/input/input.h"
 #include "../libs/network/skin_updater.h"
 
-void save_config(const Config& config);
-
 namespace {
     struct SkinEntry {
         const char* name;

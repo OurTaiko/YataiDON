@@ -88,7 +88,7 @@ private:
 
     bool login_slot(const std::string& card_hex, std::function<void()> then);
     void finish_login(RemoteLogin remote);
-    void finish_slot(int slot, PlayerData pd);
+    void finish_slot(int slot, const PlayerData& pd);
     bool login_pending() const { return pending_login_.valid(); }
     void join_with_card(const std::string& card_hex);
 

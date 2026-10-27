@@ -19,7 +19,7 @@ std::vector<std::string> list_available_skins();
 
 std::vector<fs::path> get_song_files(const std::vector<fs::path>& root_path);
 
-rapidjson::Document read_json_file(fs::path file_path);
+rapidjson::Document read_json_file(const fs::path& file_path);
 
 struct SongListEntry {
     std::string hash;

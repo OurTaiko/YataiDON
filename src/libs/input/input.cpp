@@ -368,32 +368,32 @@ static bool handle_linux_text_input(SDL_Event* event) {
 
 static YD_EventFilterRet SDLCALL touch_event_watch(void* /*userdata*/, SDL_Event* event) {
     if (is_input_locked()) {
-        return 1;
+        return true;
     }
 
 #if defined(__linux__) && !defined(__ANDROID__)
     if (handle_linux_text_input(event)) {
-        return 1;
+        return true;
     }
 #endif
 
     if (event->type == SDL_EVENT_KEY_DOWN && yd_key_scancode(*event) == SDL_SCANCODE_AC_BACK) {
         std::scoped_lock lock(input_mutex);
         pressed_keys.emplace(SDL_SCANCODE_ESCAPE, 1.0f);
-        return 0;
+        return false;
     }
     if (event->type == SDL_EVENT_KEY_UP && yd_key_scancode(*event) == SDL_SCANCODE_AC_BACK) {
         std::scoped_lock lock(input_mutex);
         released_keys.insert(SDL_SCANCODE_ESCAPE);
-        return 0;
+        return false;
     }
 
     if (event->type == SDL_EVENT_FINGER_DOWN) {
         if (!global_data.config || !global_data.config->general.touch_input) {
-            return 1;
+            return true;
         }
         if (!touch_drum_enabled.load(std::memory_order_relaxed)) {
-            return 1;
+            return true;
         }
         SDL_FingerID id = yd_finger_id(*event);
         std::scoped_lock lock(input_mutex);
@@ -420,7 +420,7 @@ static YD_EventFilterRet SDLCALL touch_event_watch(void* /*userdata*/, SDL_Event
         }
         touch_drum_pressed.store(!touch_id_to_vkey.empty(), std::memory_order_relaxed);
     }
-    return 1;
+    return true;
 }
 
 bool draw_touch_drum() {
@@ -1098,7 +1098,7 @@ namespace {
         default:
             break;
         }
-        return 0;
+        return false;
     }
 } // namespace
 

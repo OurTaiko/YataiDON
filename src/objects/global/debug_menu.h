@@ -1030,7 +1030,7 @@ private:
                 draw_rectangle_lines_ex(r.value, 1.0f, is_editing ? Color(Color::SKYBLUE) : fade(Color::WHITE, 0.4f));
                 std::string text = is_editing ? edit_data_buffer : *f.s;
                 if (is_editing && std::fmod(get_current_ms(), 1000.0) < 500.0) {
-                    text += "|";
+                    text += '|';
                 }
                 draw_text(text.c_str(), static_cast<int>(r.value.x) + 4, static_cast<int>(r.value.y) + 3, 13,
                           Color::WHITE);
@@ -1054,7 +1054,7 @@ private:
                 draw_rectangle_lines_ex(r.value, 1.0f, is_editing ? Color(Color::SKYBLUE) : fade(Color::WHITE, 0.4f));
                 std::string text = is_editing ? edit_data_buffer : data_field_display(f);
                 if (is_editing && std::fmod(get_current_ms(), 1000.0) < 500.0) {
-                    text += "|";
+                    text += '|';
                 }
                 draw_text(text.c_str(), static_cast<int>(r.value.x) + 4, static_cast<int>(r.value.y) + 3, 12,
                           Color::WHITE);
@@ -1396,7 +1396,7 @@ private:
 
             std::string text = is_editing ? edit_buffer : std::to_string(*value);
             if (is_editing && std::fmod(get_current_ms(), 1000.0) < 500.0) {
-                text += "|";
+                text += '|';
             }
             draw_text(text.c_str(), static_cast<int>(b.value.x) + 4, static_cast<int>(b.value.y) + 4, 14, Color::WHITE);
         }

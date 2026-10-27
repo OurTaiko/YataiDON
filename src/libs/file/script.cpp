@@ -286,7 +286,7 @@ void ScriptManager::index_scripts(const fs::path& script_path) {
     }
 }
 
-void ScriptManager::init(fs::path script_path) {
+void ScriptManager::init(const fs::path& script_path) {
     lua = std::make_unique<sol::state>();
     lua->open_libraries(sol::lib::base, sol::lib::package, sol::lib::string, sol::lib::math, sol::lib::table);
 #ifdef TRACY_ENABLE
@@ -661,7 +661,7 @@ void ScriptManager::register_lua_bindings() {
 
     sol::table tex = lua.create_table();
 
-    tex.set_function("get_animation", [](double anim_id, sol::object second_arg) -> BaseAnimation* {
+    tex.set_function("get_animation", [](double anim_id, const sol::object& second_arg) -> BaseAnimation* {
         if (second_arg.get_type() == sol::type::string) {
             return ::tex.get_animation(static_cast<int>(anim_id), second_arg.as<std::string>());
         }
@@ -804,8 +804,8 @@ void ScriptManager::register_lua_bindings() {
                          return info;
                      });
 
-    tex.set_function("draw_texture", [](std::shared_ptr<TextureObject> id, sol::optional<sol::table> params_table,
-                                        sol::this_state state) {
+    tex.set_function("draw_texture", [](const std::shared_ptr<TextureObject>& id,
+                                        const sol::optional<sol::table>& params_table, sol::this_state state) {
         if (!id) {
             DrawLogEntry entry{"null_texture", {}};
             log_lua_site(entry, state);
@@ -840,21 +840,22 @@ void ScriptManager::register_lua_bindings() {
     });
 
     tex.set_function("language", [] { return global_data.config->general.language; });
-    tex.set_function("skin_text", [](const std::string& key, sol::optional<std::string> lang_opt) -> std::string {
-        const SkinInfo* info = font_manager.get_text_info(key);
-        if (!info) {
-            return "";
-        }
-        const auto& m = info->text;
-        for (const std::string& l :
-             {lang_opt.value_or(global_data.config->general.language), std::string("ja"), std::string("en")}) {
-            auto t = m.find(l);
-            if (t != m.end() && !t->second.empty()) {
-                return t->second;
+    tex.set_function(
+        "skin_text", [](const std::string& key, const sol::optional<std::string>& lang_opt) -> std::string {
+            const SkinInfo* info = font_manager.get_text_info(key);
+            if (!info) {
+                return "";
             }
-        }
-        return m.empty() ? std::string() : m.begin()->second;
-    });
+            const auto& m = info->text;
+            for (const std::string& l :
+                 {lang_opt.value_or(global_data.config->general.language), std::string("ja"), std::string("en")}) {
+                auto t = m.find(l);
+                if (t != m.end() && !t->second.empty()) {
+                    return t->second;
+                }
+            }
+            return m.empty() ? std::string() : m.begin()->second;
+        });
 
     tex.set_function("skip_enabled", [] { return global_data.live_skip_count >= 0; });
 
@@ -862,7 +863,7 @@ void ScriptManager::register_lua_bindings() {
 
     lua.new_usertype<OutlinedText>("OutlinedText", "width", &OutlinedText::width, "height", &OutlinedText::height,
                                    "text", sol::property([](OutlinedText& self) { return self.get_text(); }), "draw",
-                                   [](OutlinedText& self, sol::optional<sol::table> params_table) {
+                                   [](OutlinedText& self, const sol::optional<sol::table>& params_table) {
                                        DrawTextureParams params = parse_draw_params(params_table);
                                        self.draw(params);
                                    });
@@ -871,7 +872,7 @@ void ScriptManager::register_lua_bindings() {
     text.set_function("create_text",
                       [](const std::string& skin_config_key, std::array<double, 4> color,
                          std::array<double, 4> outline_color, bool is_vertical, float outline_thickness, float spacing,
-                         sol::optional<std::string> font) -> std::unique_ptr<OutlinedText> {
+                         const sol::optional<std::string>& font) -> std::unique_ptr<OutlinedText> {
                           const SkinInfo* cfg = font_manager.get_text_info(skin_config_key);
                           std::string text;
                           if (cfg) {
@@ -913,7 +914,7 @@ void ScriptManager::register_lua_bindings() {
         [](const std::string& content, double font_size, std::array<double, 4> color,
            std::array<double, 4> outline_color, bool is_vertical, sol::optional<float> thickness,
            sol::optional<float> spacing, sol::optional<float> v_advance,
-           sol::optional<std::string> font) -> std::unique_ptr<OutlinedText> {
+           const sol::optional<std::string>& font) -> std::unique_ptr<OutlinedText> {
             auto to_u8 = [](double v) { return static_cast<uint8_t>(std::clamp(static_cast<int>(v), 0, 255)); };
             Color c = {to_u8(color[0]), to_u8(color[1]), to_u8(color[2]), to_u8(color[3])};
             Color oc = {to_u8(outline_color[0]), to_u8(outline_color[1]), to_u8(outline_color[2]),

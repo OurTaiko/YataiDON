@@ -60,7 +60,7 @@ private:
     void upload_frame(const DecodedFrame& frame);
 
 public:
-    VideoPlayer(fs::path path);
+    VideoPlayer(const fs::path& path);
     ~VideoPlayer();
 
     void start(double current_ms);

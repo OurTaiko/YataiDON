@@ -29,7 +29,7 @@ public:
 
     bool is_highlighted{false};
 
-    BaseOptionBox(const std::string& name, const std::string& description, const std::string& path);
+    BaseOptionBox(const std::string& name, std::string description, const std::string& path);
 
     virtual void confirm() {}
     virtual bool needs_text_input() const { return false; }

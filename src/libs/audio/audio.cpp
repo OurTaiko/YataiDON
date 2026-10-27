@@ -39,7 +39,6 @@ static bool decode_bank(const fs::path& p, gen4::DecodedAudio& out) {
     return p.extension() == ".nub" ? gen3::decode_nub(p, out) : gen4::decode_nus3bank(p, out);
 }
 #endif
-#include <algorithm>
 #if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS)
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -326,11 +325,10 @@ std::vector<std::string> enumerate_audio_devices(int device_type) {
 
     // Default (SDL3) backend and any unrecognized type: enumerate SDL3 devices.
     bool init_here = false;
-    if (!(SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO)) {
-        if (SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-            init_here = true;
-        }
+    if (!(SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+        init_here = true;
     }
+
     int count = 0;
     SDL_AudioDeviceID* devices = SDL_GetAudioPlaybackDevices(&count);
     if (devices) {

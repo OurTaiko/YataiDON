@@ -29,7 +29,7 @@ public:
     MoveAnimation* move;
     Box(const std::string& text_str, int font_size, Screens location);
     void set_positions(float x, float y = 0);
-    void update(double current_time_ms, bool is_selected);
+    void update(double current_ms, bool is_selected);
     void move_left();
     void move_right();
     void move_up();

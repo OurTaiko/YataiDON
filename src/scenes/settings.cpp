@@ -8,8 +8,6 @@
 #include "../libs/network/network.h"
 #include "../objects/song_select/file_navigator/navigator.h"
 
-void save_config(const Config& config);
-
 void SettingsScreen::on_screen_start() {
     Screen::on_screen_start();
 

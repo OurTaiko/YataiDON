@@ -83,7 +83,7 @@ int calculate_base_score(const NoteList& notes) {
     return static_cast<int>(std::ceil(calculation)) * 10;
 }
 
-std::string test_encodings(const std::filesystem::path& file_path) {
+std::string_view test_encodings(const std::filesystem::path& file_path) {
     std::ifstream file(file_path, std::ios::binary);
     if (!file.is_open()) {
         return "";
@@ -162,9 +162,9 @@ static std::vector<std::string> read_lines_once(const std::filesystem::path& pat
     return lines;
 }
 
-TJAParser::TJAParser(const std::filesystem::path& path, int start_delay, int player_num)
-    : file_path(path), start_ms(static_cast<double>(start_delay)), current_ms(static_cast<double>(start_delay)),
-      player_num(player_num) {
+TJAParser::TJAParser(std::filesystem::path path, int start_delay, int player_num)
+    : file_path(std::move(path)), start_ms(static_cast<double>(start_delay)),
+      current_ms(static_cast<double>(start_delay)), player_num(player_num) {
     PROFILE_SCOPE();
 
     std::vector<std::string> lines = read_lines_once(file_path, encoding);
@@ -1171,7 +1171,7 @@ void TJAParser::handle_JPOSSCROLL(const std::string& part, ParserState& state) {
     // field width ("3/5"); the distance is one component or a complex "x+yi" / "x-yi" / "yi"
     auto component = [&](std::string c, double& out) -> bool {
         if (c.empty() || c == "+" || c == "-") {
-            c += "1";
+            c += '1';
         }
         size_t slash = c.find('/');
         try {
@@ -1512,11 +1512,9 @@ void modifier_moji(NoteList& notes) {
                     notes.notes[i].moji = 4;
                 }
             }
-            if (length == 3) {
-                if (notes.notes[start + 0].type == NoteType::DON && notes.notes[start + 1].type == NoteType::DON &&
-                    notes.notes[start + 2].type == NoteType::DON) {
-                    notes.notes[start + 1].moji = 2;
-                }
+            if (length == 3 && notes.notes[start + 0].type == NoteType::DON &&
+                notes.notes[start + 1].type == NoteType::DON && notes.notes[start + 2].type == NoteType::DON) {
+                notes.notes[start + 1].moji = 2;
             }
         }
     }

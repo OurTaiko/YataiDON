@@ -280,7 +280,7 @@ void EntryScreen::end_name_entry() {
     }
 }
 
-void EntryScreen::finish_slot(int slot, PlayerData pd) {
+void EntryScreen::finish_slot(int slot, const PlayerData& pd) {
     (slot == 0 ? scores_manager.player_1 : scores_manager.player_2) = pd.player_id;
     (slot == 0 ? scores_manager.player_1_data : scores_manager.player_2_data) = pd;
     scores_manager.save_player_data(pd);

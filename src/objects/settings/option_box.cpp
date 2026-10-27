@@ -3,12 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <utility>
 
 #include "../../libs/input/ime_ui.h"
 #include "../../libs/input/input.h"
 #include "../../libs/math/animation.h"
-
-std::string getKeyString(int key_code);
 
 static constexpr int OPTION_FONT_SIZE_BASE = 30;
 static constexpr float DESC_X_BASE = 450.0f;
@@ -27,8 +26,8 @@ static std::unique_ptr<FadeAnimation> make_flicker() {
     return fa;
 }
 
-BaseOptionBox::BaseOptionBox(const std::string& name, const std::string& description, const std::string& path)
-    : description_text(description), config_ref(get_config_ref(path)),
+BaseOptionBox::BaseOptionBox(const std::string& name, std::string description, const std::string& path)
+    : description_text(std::move(description)), config_ref(get_config_ref(path)),
       name_text(std::make_unique<OutlinedText>(name, option_font_size(), Color::WHITE, Color::BLACK, false, 4, -4)),
       t_overlay(tex.get_texture("background/overlay")), t_title(tex.get_texture("background/title")),
       t_title_highlight(tex.get_texture("background/title_highlight")),

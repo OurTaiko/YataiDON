@@ -432,7 +432,7 @@ std::vector<fs::path> get_song_files(const std::vector<fs::path>& root_path) {
     return deduped;
 }
 
-rapidjson::Document read_json_file(fs::path file_path) {
+rapidjson::Document read_json_file(const fs::path& file_path) {
     if (!fs::exists(file_path)) {
         throw std::runtime_error("File not found: " + file_path.string());
     }

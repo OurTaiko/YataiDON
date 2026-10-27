@@ -10,9 +10,6 @@
 #include "../libs/math/animation.h"
 #include "../objects/global/practice_timer.h"
 
-// Forward declaration for set_touch_drum_enabled from input.cpp
-extern void set_touch_drum_enabled(bool enabled);
-
 void PracticeGameScreen::init_practice_textures() {
     for (int t = 0; t <= 9; ++t) {
         std::string name = "notes/" + std::to_string(t);

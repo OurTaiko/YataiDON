@@ -22,7 +22,7 @@ inline std::string word_wrap(const std::string& text, int font_size, float spaci
             size_t nl = text.find('\n', start);
             size_t len = (nl == std::string::npos) ? std::string::npos : nl - start;
             if (!result.empty()) {
-                result += "\n";
+                result += '\n';
             }
             result += word_wrap(text.substr(start, len), font_size, spacing, max_width);
             if (nl == std::string::npos) {

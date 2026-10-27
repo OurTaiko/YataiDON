@@ -137,7 +137,7 @@ private:
     std::vector<TextureFrame> textures;
 
 public:
-    TextureChangeAnimation(double duration, const std::vector<std::tuple<double, double, int>>& textures,
+    TextureChangeAnimation(double duration, const std::vector<std::tuple<double, double, int>>& keyframes,
                            bool loop = false, bool lock_input = false, double delay = 0.0);
 
     void reset() override;

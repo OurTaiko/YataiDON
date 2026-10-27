@@ -72,7 +72,7 @@ public:
     bool is_new = false;
     bool preserve_order = false;
 
-    BaseBox(const fs::path& path, const BoxDef& box_def);
+    BaseBox(fs::path path, const BoxDef& box_def);
     virtual ~BaseBox();
 
     virtual void load_text();
@@ -95,7 +95,7 @@ public:
 
     void move_box(float target_position, float duration, float delay = 0.0f,
                   std::optional<EaseType> ease = EaseType::Cubic);
-    virtual void update(double current_ms);
+    virtual void update(double current_time);
 
     const char* draw_state() const {
         if (yellow_box_active && is_diff_select) {

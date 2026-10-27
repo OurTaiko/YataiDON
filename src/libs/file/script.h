@@ -71,7 +71,7 @@ public:
 
     ScriptManager() : tex(::tex) {}
 
-    void init(fs::path script_path);
+    void init(const fs::path& script_path);
     bool has_lua_script(const std::string& script_name) const;
     void shutdown();
     std::string get_lua_script_path(const std::string& script_name);

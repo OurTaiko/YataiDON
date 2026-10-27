@@ -56,6 +56,8 @@ public:
     Player(std::optional<SongParser>& parser_ref, PlayerNum player_num_param, int difficulty_param, bool is_2p_param,
            const Modifiers& modifiers_param);
 
+    virtual ~Player() = default;
+
     std::optional<JudgeCounter> judge_counter;
     std::optional<Gauge> gauge;
     Gauge* dan_gauge = nullptr;

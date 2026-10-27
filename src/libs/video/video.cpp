@@ -8,7 +8,7 @@
 #include "../gfx/texture.h"
 #include "../profiler.h"
 
-VideoPlayer::VideoPlayer(fs::path path) : is_finished_arr{false, false} {
+VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
     if (path.extension() == ".png" || path.extension() == ".jpg") {
         texture = load_texture(path.string().c_str());
         is_static = true;

@@ -145,10 +145,8 @@ ScoresManager::ScoresManager(const fs::path& db_path) {
     }
     run_migration("ALTER TABLE scores ADD COLUMN played_at INTEGER NOT NULL DEFAULT 0;");
 
-    if (version < 4) {
-        if (!run_migration("ALTER TABLE scores ADD COLUMN modifiers TEXT NOT NULL DEFAULT '{}';")) {
-            migrations_ok = false;
-        }
+    if (version < 4 && !run_migration("ALTER TABLE scores ADD COLUMN modifiers TEXT NOT NULL DEFAULT '{}';")) {
+        migrations_ok = false;
     }
 
     // Migration v5: Convert integer player_ids to string access codes
@@ -273,11 +271,10 @@ ScoresManager::ScoresManager(const fs::path& db_path) {
     run_migration("ALTER TABLE players ADD COLUMN modifier_skip BOOL NOT NULL DEFAULT 0;");
 
     // Migration v7: dan_results (one best-of row per course title) replaced by dan_scores (attempt history).
-    if (version < 7) {
-        if (run_migration("DROP TABLE IF EXISTS dan_results;")) {
-            sqlite3_exec(db_fsd, "PRAGMA user_version = 7;", nullptr, nullptr, nullptr);
-        }
+    if (version < 7 && run_migration("DROP TABLE IF EXISTS dan_results;")) {
+        sqlite3_exec(db_fsd, "PRAGMA user_version = 7;", nullptr, nullptr, nullptr);
     }
+
     ensure_dan_table(db_fsd);
 
     // Default player "1" (2P placeholder): Kat-chan, 2P chara colors, 2P title color. Only touches the untouched
@@ -1131,7 +1128,7 @@ std::string dan_course_id(const std::vector<DanSongEntry>& songs, const std::vec
         for (int v : e.song_gold) {
             key += ",g" + std::to_string(v);
         }
-        key += ";";
+        key += ';';
     }
     static const char* hex = "0123456789abcdef";
     std::string out;

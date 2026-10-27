@@ -13,6 +13,7 @@
 #include <regex>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -271,7 +272,7 @@ struct TJAMetadata {
     std::map<std::string, std::string> title = {{"en", ""}};
     std::map<std::string, std::string> subtitle = {{"en", ""}};
     bool subtitle_full_display = false;
-    std::string genre = "";
+    std::string genre;
     fs::path wave;
     double demostart = 0.0f;
     double offset = 0.0f;
@@ -279,7 +280,7 @@ struct TJAMetadata {
     fs::path bgmovie;
     double movieoffset = 0.0f;
     fs::path preimage;
-    std::string scene_preset = "";
+    std::string scene_preset;
     std::map<int, CourseData> course_data;
 };
 
@@ -341,7 +342,7 @@ public:
 
     TJAParser() = default;
 
-    TJAParser(const std::filesystem::path& path, int start_delay = 0, int player_num = 0);
+    TJAParser(std::filesystem::path path, int start_delay = 0, int player_num = 0);
 
     std::filesystem::path file_path;
     TJAMetadata metadata;
@@ -431,7 +432,7 @@ private:
 
 double get_ms_per_measure(double bpm_val, double time_sig);
 int calculate_base_score(const NoteList& notes);
-std::string test_encodings(const std::filesystem::path& file_path);
+std::string_view test_encodings(const std::filesystem::path& file_path);
 std::string strip_comments(const std::string& code);
 
 Interval get_note_interval_type(double interval_ms, double bpm, double time_sig = 4.0);

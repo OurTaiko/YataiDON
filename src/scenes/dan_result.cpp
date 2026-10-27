@@ -427,10 +427,9 @@ std::optional<Screens> DanResultScreen::update() {
         }
     }
 
-    if (congrats_showing && current_ms - congrats_start_ms >= 899 * FRAME_MS + 180 * LUA_FRAME_MS) {
-        if (!fade_out->is_started) {
-            fade_out->start();
-        }
+    if (congrats_showing && current_ms - congrats_start_ms >= 899 * FRAME_MS + 180 * LUA_FRAME_MS &&
+        !fade_out->is_started) {
+        fade_out->start();
     }
 
     if (fade_out->is_finished) {

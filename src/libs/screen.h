@@ -5,6 +5,7 @@
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <utility>
 
 #include "audio/audio.h"
 #include "gfx/texture.h"
@@ -90,7 +91,7 @@ class Screen {
 public:
     bool screen_init{false};
     std::string screen_name;
-    Screen(const std::string& name) : screen_name(name) {}
+    Screen(std::string name) : screen_name(std::move(name)) {}
 
     virtual ~Screen() = default;
 

@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "../gfx.h" // IWYU pragma: keep
@@ -80,8 +81,9 @@ struct TextureObject {
     std::optional<std::vector<Rect>> crop_data;
 
     float opaque_right = 0.0f;
-    TextureObject(const std::string& name, int width, int height)
-        : name(name), width(width), height(height), x{0}, y{0}, x2{width}, y2{height} {}
+    TextureObject(std::string name, int width, int height)
+        : name(std::move(name)), width(width), height(height), x{0}, y{0}, x2{width}, y2{height} {}
+
     virtual ~TextureObject() = default;
 
     float scissor_right() const {
@@ -251,8 +253,8 @@ public:
     void unload_textures();
 
     bool has_animation(const int id) const { return animations.contains(id); }
-    BaseAnimation* get_animation(const int id, bool is_copy = false);
-    BaseAnimation* get_animation(const int id, const std::string& screen_name);
+    BaseAnimation* get_animation(int id, bool is_copy = false);
+    BaseAnimation* get_animation(int id, const std::string& screen_name);
 
     void read_tex_obj_data(const Value& tex_mapping, TextureObject* tex_obj, float scale = 1.0f);
 

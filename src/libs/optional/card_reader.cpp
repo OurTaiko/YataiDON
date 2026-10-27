@@ -679,10 +679,8 @@ namespace card_reader {
                     if (handle_mifare_card(card_data)) {
                         return true;
                     }
-                } else if (card_type == CARD_TYPE_FELICA && card_size == 16) {
-                    if (handle_felica_card(card_data)) {
-                        return true;
-                    }
+                } else if (card_type == CARD_TYPE_FELICA && card_size == 16 && handle_felica_card(card_data)) {
+                    return true;
                 }
             }
 

@@ -133,32 +133,30 @@ void ResultPlayer::update_score_animation(double current_ms, bool is_skipped) {
             update_index++;
             score_delay.value() += (update_index == std::ssize(update_list) - 1) ? count_up_score_ms : count_up_row_ms;
         }
-    } else if (score_delay.has_value() && update_index < std::ssize(update_list)) {
-        if (current_ms > score_delay.value()) {
-            if (score_animator.has_value() && !score_animator->is_finished) {
-                auto& [field_name, curr_num] = update_list[update_index];
-                std::string next_score_str = score_animator->next_score();
-                int new_num = std::stoi(next_score_str);
-                assign_field(field_name, next_score_str);
-                if (new_num != curr_num) {
-                    audio.play_sound("num_up", VolumePreset::SOUND);
-                }
-                if (score_animator->is_finished) {
-                    audio.play_sound("don", VolumePreset::SOUND);
-                    score_delay.value() += 750;
-                    if (update_index == std::ssize(update_list) - 1) {
-                        rows_done_ms = current_ms;
-                        return;
-                    }
-                    update_index++;
-                    if (update_index < std::ssize(update_list)) {
-                        score_animator = ScoreAnimator(std::get<1>(update_list[update_index]));
-                    }
-                }
-                score_delay.value() += 16.67 * 3;
+    } else if (score_delay.has_value() && update_index < std::ssize(update_list) && current_ms > score_delay.value() &&
+               score_animator.has_value() && !score_animator->is_finished) {
+        auto& [field_name, curr_num] = update_list[update_index];
+        std::string next_score_str = score_animator->next_score();
+        int new_num = std::stoi(next_score_str);
+        assign_field(field_name, next_score_str);
+        if (new_num != curr_num) {
+            audio.play_sound("num_up", VolumePreset::SOUND);
+        }
+        if (score_animator->is_finished) {
+            audio.play_sound("don", VolumePreset::SOUND);
+            score_delay.value() += 750;
+            if (update_index == std::ssize(update_list) - 1) {
+                rows_done_ms = current_ms;
+                return;
+            }
+            update_index++;
+            if (update_index < std::ssize(update_list)) {
+                score_animator = ScoreAnimator(std::get<1>(update_list[update_index]));
             }
         }
+        score_delay.value() += 16.67 * 3;
     }
+
     if (rows_done_ms == 0 && update_index >= std::ssize(update_list)) {
         rows_done_ms = current_ms;
     }

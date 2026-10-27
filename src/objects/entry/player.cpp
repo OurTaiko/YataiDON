@@ -8,7 +8,6 @@
 #include "../../libs/network/network.h"
 
 static void apply_pd_look(Chara3D& chara, PlayerData* pd, PlayerNum player_num) {
-    std::string player_id = get_player_id(player_num);
     if (pd) {
         chara.set_don_colors(pd->chara_color_1, pd->chara_color_2, pd->chara_color_3);
         chara.apply_face(pd->chara_face_index);

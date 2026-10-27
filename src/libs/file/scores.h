@@ -16,8 +16,8 @@ inline int64_t unix_now() {
 
 struct PlayerData {
     std::string player_id;
-    std::string username = "";
-    std::string title = "";
+    std::string username;
+    std::string title;
     int title_bg = 0;
     int dan = -1; // -1 = no 段位, matches the column default
     bool gold = false;

@@ -105,13 +105,13 @@ std::optional<Screens> SongSelect2PScreen::update() {
     player->update(current_time);
     player_2->update(current_time);
 
-    if (player->is_ready && player_2->is_ready && !game_transition.has_value()) {
-        if (player->selected_difficulty >= Difficulty::EASY && player_2->selected_difficulty >= Difficulty::EASY) {
-            if (auto* item = dynamic_cast<SongBox*>(navigator.get_current_item())) {
-                select_song(item);
-            }
+    if (player->is_ready && player_2->is_ready && !game_transition.has_value() &&
+        player->selected_difficulty >= Difficulty::EASY && player_2->selected_difficulty >= Difficulty::EASY) {
+        if (auto* item = dynamic_cast<SongBox*>(navigator.get_current_item())) {
+            select_song(item);
         }
     }
+
     if (!game_transition.has_value() && ((player->is_ready && player->selected_difficulty == Difficulty::BACK) ||
                                          (player_2->is_ready && player_2->selected_difficulty == Difficulty::BACK))) {
         navigator.exit_diff_select();

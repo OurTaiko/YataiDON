@@ -2,6 +2,7 @@
 
 #include <iterator>
 #include <stdexcept>
+#include <utility>
 
 #include "../../libs/audio/audio.h"
 #include "../../libs/file/filesystem.h"
@@ -93,8 +94,8 @@ static float box_step() {
     return BOX_STEP_BASE * tex.screen_scale;
 }
 
-SettingsBox::SettingsBox(const std::string& name, const std::string& label_text, const rapidjson::Value& options_json)
-    : box_name(name),
+SettingsBox::SettingsBox(std::string name, const std::string& label_text, const rapidjson::Value& options_json)
+    : box_name(std::move(name)),
       label(std::make_unique<OutlinedText>(label_text, static_cast<int>(LABEL_FONT_SIZE_BASE * tex.screen_scale),
                                            Color::WHITE, Color{109, 68, 24, 255}, false, LABEL_OUTLINE_BASE)),
       x(10.0f * tex.screen_scale), y(wrap_top()), start_position(wrap_top()),

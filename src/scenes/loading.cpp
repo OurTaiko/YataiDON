@@ -35,10 +35,8 @@ void LoadingScreen::init_visuals() {
     progress_bar.x = (tex.screen_width - progress_bar.width) / 2;
     progress_bar.y = tex.screen_height * 0.85;
 
-    if (const SkinInfo* bar = tex.get_skin_config(SC::LOADING_PROGRESS_BAR)) {
-        if (bar->width > 0 && bar->height > 0) {
-            progress_bar = {bar->x, bar->y, bar->width, bar->height};
-        }
+    if (const SkinInfo* bar = tex.get_skin_config(SC::LOADING_PROGRESS_BAR); bar && bar->width > 0 && bar->height > 0) {
+        progress_bar = {bar->x, bar->y, bar->width, bar->height};
     }
 
     double fade_ms = 1000;

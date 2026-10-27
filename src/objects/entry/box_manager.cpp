@@ -20,7 +20,6 @@ BoxManager::BoxManager(bool two_player) : is_2p(two_player) {
 }
 
 void BoxManager::build_board_list() {
-    const std::string lang = global_data.config->general.language;
     int font_size = tex.get_skin_config(SC::ENTRY_BOX_TEXT)->font_size;
 
     if (script_manager.lua) {

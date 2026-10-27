@@ -110,17 +110,15 @@ void SongInfo::draw() {
     // Optional skin key game_song_info_max_width: a longer title is squeezed horizontally to fit.
     float title_w = song_title->width;
     float title_x2 = 0.0f;
-    if (const SkinInfo* m = tex.get_skin_config(SC::GAME_SONG_INFO_MAX_WIDTH)) {
-        if (m->width > 0 && title_w > m->width) {
-            title_x2 = m->width - title_w;
-            title_w = m->width;
-        }
+    if (const SkinInfo* m = tex.get_skin_config(SC::GAME_SONG_INFO_MAX_WIDTH);
+        m && m->width > 0 && title_w > m->width) {
+        title_x2 = m->width - title_w;
+        title_w = m->width;
     }
+
     float title_x = text_x - title_w;
-    if (const SkinInfo* c = tex.get_skin_config(SC::GAME_SONG_INFO_CENTER)) {
-        if (c->width > 0 && title_w <= c->width) {
-            title_x = c->x - title_w / 2.0f;
-        }
+    if (const SkinInfo* c = tex.get_skin_config(SC::GAME_SONG_INFO_CENTER); c && c->width > 0 && title_w <= c->width) {
+        title_x = c->x - title_w / 2.0f;
     }
 
     if (const SkinInfo* plate = tex.get_skin_config(SC::SONG_NUM_GAME)) {

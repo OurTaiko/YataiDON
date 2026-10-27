@@ -36,7 +36,7 @@ public:
     std::string box_name;
     bool in_box{false};
 
-    SettingsBox(const std::string& name, const std::string& label_text, const rapidjson::Value& options_json);
+    SettingsBox(std::string name, const std::string& label_text, const rapidjson::Value& options_json);
     ~SettingsBox();
 
     void set_y(float new_y);
