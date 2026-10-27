@@ -1,8 +1,7 @@
 // Crash handling shared by desktop Linux and macOS.
-#include "platform.h"
-
 #include <algorithm>
 #include <cerrno>
+#include <cpptrace/cpptrace.hpp>
 #include <csignal>
 #include <cstdint>
 #include <cstring>
@@ -10,7 +9,7 @@
 #include <unistd.h>
 #include <vector>
 
-#include <cpptrace/cpptrace.hpp>
+#include "platform.h"
 
 namespace {
 

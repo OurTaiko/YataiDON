@@ -20,7 +20,6 @@
 #include "../gfx/text.h"
 #include "../math/md5.h"
 #include "../profiler.h"
-
 #include "platform/platform_windows.h"
 
 double get_ms_per_measure(double bpm_val, double time_sig) {

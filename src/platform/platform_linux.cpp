@@ -1,5 +1,3 @@
-#include "platform.h"
-
 #include <climits>
 #include <cstring>
 #include <dlfcn.h>
@@ -8,6 +6,7 @@
 
 #include "../libs/gfx.h"
 #include "../libs/gfx/sdl_compat.h"
+#include "platform.h"
 
 // Crash handlers live in platform_posix.cpp.
 

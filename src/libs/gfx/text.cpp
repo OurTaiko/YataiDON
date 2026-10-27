@@ -5,13 +5,12 @@
 #include <spdlog/spdlog.h>
 #include <vector>
 
+#include "../../platform/platform_windows.h"
 #include "../file/filesystem.h"
 #include "../file/script.h"
 #include "../gfx.h"
 #include "../global_data.h"
 #include "han_fold_table.h"
-
-#include "../../platform/platform_windows.h"
 #if !defined(_WIN32) && defined(YATAIDON_HAVE_ICONV)
 #include <iconv.h>
 #endif

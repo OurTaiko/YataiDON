@@ -1,9 +1,8 @@
-#include "platform.h"
-
 #include <csignal>
 #include <unistd.h>
 
 #include "../libs/gfx.h"
+#include "platform.h"
 #include "platform_mobile.h"
 
 std::filesystem::path platform_get_working_directory() {

@@ -1,10 +1,10 @@
 #include "audio.h"
 
+#include "../../platform/platform_ios.h"
+#include "../../platform/platform_windows.h"
 #include "../profiler.h"
 #include "loudness.h"
 #include "spdlog/spdlog.h"
-#include "../../platform/platform_ios.h"
-#include "../../platform/platform_windows.h"
 #ifdef SUPPORT_FUMEN
 #include "../optional/nub.h"
 #include "../optional/nus3bank.h"

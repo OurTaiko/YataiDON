@@ -19,7 +19,6 @@
 #include "libs/profiler.h"
 #include "libs/screen.h"
 #include "libs/video/webcam.h"
-
 #include "platform/platform.h"
 #include "platform/platform_emscripten.h"
 #include "platform/platform_ios.h"

@@ -7,11 +7,11 @@
 #include "../../../libs/file/filesystem.h"
 #include "../../../libs/gfx/han_fold_table.h"
 #include "../../../libs/gfx/text.h"
+#include "../../../platform/platform_windows.h"
 #include "../song_select_script.h"
 #include "box_back.h"
 #include "box_song_osu.h"
 #include "color_utils.h"
-#include "../../../platform/platform_windows.h"
 #ifdef SUPPORT_FUMEN
 #include "../../../libs/optional/gen3.h"
 #include "../../../libs/optional/gen4.h"

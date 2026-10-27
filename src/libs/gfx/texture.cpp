@@ -11,14 +11,13 @@
 #include <string_view>
 #include <thread>
 
+#include "../../platform/platform_windows.h"
 #include "../file/filesystem.h"
 #include "../file/script.h"
 #include "../gfx.h"
 #include "../global_data.h"
 #include "../profiler.h"
 #include "text.h"
-
-#include "../../platform/platform_windows.h"
 
 namespace {
 

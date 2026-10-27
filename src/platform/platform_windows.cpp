@@ -1,7 +1,5 @@
 #include "platform_windows.h"
 
-#include "platform.h"
-
 #include <atomic>
 #include <csignal>
 #include <cstdint>
@@ -9,6 +7,8 @@
 #include <portaudio.h>
 #include <spdlog/spdlog.h>
 #include <string>
+
+#include "platform.h"
 // clang-format off
 #include <windows.h>
 #include <dbghelp.h> // must follow windows.h

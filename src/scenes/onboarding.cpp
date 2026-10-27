@@ -259,6 +259,5 @@ void OnboardingScreen::draw() {
     if (!error.empty()) {
         draw_line(error, 565 * s, static_cast<int>(22 * s), Color::RED);
     }
-    draw_line("Don: next / continue    Ka: toggle", 650 * s, static_cast<int>(20 * s),
-              Color::GRAY);
+    draw_line("Don: next / continue    Ka: toggle", 650 * s, static_cast<int>(20 * s), Color::GRAY);
 }

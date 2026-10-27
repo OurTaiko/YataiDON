@@ -35,7 +35,6 @@
 // file (handle_linux_text_input below).
 #include "../../platform/platform_ios.h"
 #include "../../platform/platform_windows.h"
-
 #include "../gfx/sdl_compat.h"
 std::atomic<bool> input_thread_running{true};
 std::thread input_thread;

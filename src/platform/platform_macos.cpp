@@ -1,5 +1,3 @@
-#include "platform.h"
-
 #include <climits>
 #include <cstdint>
 #include <cstdlib>
@@ -7,6 +5,7 @@
 #include <spdlog/spdlog.h>
 
 #include "../libs/gfx.h"
+#include "platform.h"
 
 // Crash handlers live in platform_posix.cpp.
 
