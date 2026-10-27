@@ -195,23 +195,20 @@ std::optional<Screens> OnboardingScreen::update() {
         return on_screen_end(skinless_start ? Screens::LOADING : Screens::TITLE);
     }
 
-    const int rows = kSkinCount + 2;
-    if (key_pressed(SDL_SCANCODE_UP)) {
-        row = (row + rows - 1) % rows;
-    } else if (key_pressed(SDL_SCANCODE_DOWN)) {
-        row = (row + 1) % rows;
-    } else if (is_l_kat_pressed() || menu_left_pressed() || is_r_kat_pressed() || menu_right_pressed()) {
-        if (row == online_row()) {
-            online = !online;
+    // drum-only: don moves down (starts the download on Continue), kat toggles the current row
+    if (menu_confirm_pressed()) {
+        if (row == continue_row()) {
+            begin_download();
+        } else {
+            row++;
         }
-    } else if (is_l_don_pressed() || is_r_don_pressed() || menu_confirm_pressed()) {
+    } else if (menu_left_pressed() || menu_right_pressed()) {
         if (row < kSkinCount) {
             toggle_skin(row);
         } else if (row == online_row()) {
             online = !online;
-            row = continue_row();
         } else {
-            begin_download();
+            row = 0; // kat on Continue: back to the top
         }
     }
     return std::nullopt;
@@ -262,6 +259,6 @@ void OnboardingScreen::draw() {
     if (!error.empty()) {
         draw_line(error, 565 * s, static_cast<int>(22 * s), Color::RED);
     }
-    draw_line("Up/Down: move    Enter / don: select    Left/Right: toggle online", 650 * s, static_cast<int>(20 * s),
+    draw_line("Don: next / continue    Ka: toggle", 650 * s, static_cast<int>(20 * s),
               Color::GRAY);
 }

@@ -126,7 +126,19 @@ else()
     GIT_SHALLOW    TRUE
     UPDATE_DISCONNECTED TRUE
   )
+  if(CMAKE_CROSSCOMPILING)
+    # shaderc must run on the host: reuse the one a desktop bgfx tree built
+    set(BGFX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  endif()
   FetchContent_MakeAvailable(bgfx)
+  if(CMAKE_CROSSCOMPILING)
+    set(YATAIDON_HOST_SHADERC "${CMAKE_SOURCE_DIR}/.cmake-deps/bgfx-build/cmake/bgfx/shaderc" CACHE FILEPATH "Host shaderc")
+    if(NOT EXISTS "${YATAIDON_HOST_SHADERC}")
+      message(FATAL_ERROR "Host shaderc not found at ${YATAIDON_HOST_SHADERC}: build a desktop bgfx tree first or set YATAIDON_HOST_SHADERC")
+    endif()
+    add_executable(bgfx::shaderc IMPORTED GLOBAL)
+    set_target_properties(bgfx::shaderc PROPERTIES IMPORTED_LOCATION "${YATAIDON_HOST_SHADERC}")
+  endif()
 endif()
 
 # RapidJSON
