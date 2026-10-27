@@ -36,9 +36,9 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/vendor/SDL" "${CMAKE_BINARY_DIR}/s
 get_target_property(sdl_sources SDL2-static SOURCES)
 list(FILTER sdl_sources EXCLUDE REGEX "/video/ps5/")
 set_property(TARGET SDL2-static PROPERTY SOURCES "${sdl_sources}")
-target_sources(SDL2-static PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/native-sdl-video.c")
+target_sources(SDL2-static PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/native-sdl-video.c" "${CMAKE_CURRENT_SOURCE_DIR}/native-ime.c")
 target_include_directories(SDL2-static PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/vendor/SDL/src")
-set_property(TARGET SDL2-static PROPERTY INTERFACE_LINK_LIBRARIES "ScePad;SceUserService;SceSystemService")
+set_property(TARGET SDL2-static PROPERTY INTERFACE_LINK_LIBRARIES "ScePad;SceUserService;SceSystemService;SceImeDialog;SceSysmodule")
 
 foreach(pair "SceAgc;agc_canary_link_stub.c" "SceAgcDriver;agc_driver_canary_link_stub.c")
   list(GET pair 0 name)

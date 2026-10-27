@@ -3,6 +3,7 @@
 #include "../libs/gfx.h"
 #include <stdexcept>
 #include <cstdio>
+#include <cstdlib>
 
 #include "ps5_video.h"
 
@@ -34,6 +35,14 @@ extern "C" int ps5_set_output_refresh(int hz) __attribute__((weak));
 static int output_refresh = 60;
 
 void ps5_init_window(int refresh_hz) {
+    // Set this before display discovery creates the first Vulkan instance.
+    // RADV otherwise defaults to the installed application's /app0 directory.
+    constexpr const char* shader_cache = "/data/YataiDON/radv-shader-cache";
+    std::filesystem::create_directories(shader_cache);
+    if (setenv("MESA_SHADER_CACHE_DIR", shader_cache, 1) != 0)
+        throw std::runtime_error("PS5 RADV shader cache configuration failed");
+    std::fprintf(stderr, "[yataidon-ps5] RADV shader cache: %s\n", shader_cache);
+
     ps5_preload_video_decoder();
     av_log_set_level(16);
     SDL_SetMainReady();

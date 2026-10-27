@@ -73,7 +73,8 @@ file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/native-archives.txt CONTENT
 "$<TARGET_FILE:yataidon_ps5_game>\n$<TARGET_FILE:bgfx>\n$<TARGET_FILE:bx>\n$<TARGET_FILE:bimg>\n$<TARGET_FILE:yataidon_vulkan>\n$<TARGET_FILE:yataidon_lua>\n$<TARGET_FILE:yataidon_sqlite>\n$<TARGET_FILE:sndfile>\n$<TARGET_FILE:samplerate>\n$<TARGET_FILE:miniz>\n$<TARGET_FILE:ebur128>\n$<TARGET_FILE:SDL2-static>\n")
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated/shaders/spirv")
-foreach(shader vs_2d fs_2d fs_colortransform)
+foreach(shader vs_2d fs_2d fs_colortransform vs_mesh vs_outline
+    fs_cutout fs_mesh fs_null fs_outline fs_outline_fxaa)
   if(shader MATCHES "^vs_")
     set(type vertex)
   else()

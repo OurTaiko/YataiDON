@@ -25,6 +25,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--template", type=Path, default=ROOT / "vendor/native-template")
     parser.add_argument("--tools-only", action="store_true")
+    parser.add_argument("--output", type=Path, help="Destination ZIP (defaults to dist/YataiDON-PS5-experimental.zip)")
     parser.add_argument("--skip-media", action="store_true", help="Package the app and shaders without installed skins/songs")
     args = parser.parse_args()
     template = args.template.resolve()
@@ -172,7 +173,7 @@ def main():
         "YataiDON PS5 - experimental, not hardware tested\n\n"
         "Install/register PPSA99329 using your native homebrew folder-app workflow.\n"
         "Copy data/YataiDON to /data/YataiDON on the console.\n"
-        "This build uses bgfx/Vulkan; 3D models are not implemented upstream yet.\n"
+        "This build uses bgfx/Vulkan with upstream 3D model and animation support.\n"
         "Add a complete\n"
         "skin and its parent dependencies under /data/YataiDON/Skins before playing.\n"
         "Configuration, scores and logs are written under /data/YataiDON.\n"
@@ -201,7 +202,8 @@ def main():
     for dependency in ("bgfx", "bx", "bimg"):
         shutil.copy2(ROOT / "vendor/bgfx.cmake" / dependency / "LICENSE",
                      licenses / f"{dependency}-LICENSE")
-    bundle = ROOT / "dist/YataiDON-PS5-experimental.zip"
+    bundle = args.output if args.output else ROOT / "dist/YataiDON-PS5-experimental.zip"
+    bundle.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as output:
         directories = (app, data / "shader", licenses) if args.skip_media else (app, data, licenses)
         for directory in directories:

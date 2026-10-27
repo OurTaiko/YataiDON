@@ -1,13 +1,31 @@
 #include "input.h"
 #ifdef YATAIDON_PLATFORM_PS5
 #include "../../platform/ps5_controls.h"
+#include "../../../ps5/native-ime.h"
 static bool ps5_menu_input(PlayerNum player) {
     return !ps5_controls::gameplay(global_data.current_screen) &&
-           (player == PlayerNum::ALL || player == global_data.player_num);
+           (player == PlayerNum::ALL || player == PlayerNum::P1 || player == PlayerNum::P2);
 }
-static bool ps5_menu_press(ps5_controls::MenuAction action, float* strength) {
-    for (int button = 1; button <= 18; ++button)
-        if (ps5_controls::menu_action(button) == action && check_key_pressed(10000 + button, strength)) return true;
+static bool ps5_menu_press(ps5_controls::MenuAction action, PlayerNum player, float* strength) {
+    const int first_slot = player == PlayerNum::P2 ? 1 : 0;
+    const int end_slot = player == PlayerNum::ALL ? 4 : first_slot + 1;
+    for (int slot = first_slot; slot < end_slot; ++slot) {
+        for (int button = 1; button <= 18; ++button) {
+            if (ps5_controls::menu_action(button) != action) continue;
+            if (check_key_pressed(ps5_controls::player_button_key(slot, button), strength)) {
+                // Consume the shared alias too, so a join press cannot also
+                // confirm another menu action in the same frame.
+                check_key_pressed(10000 + button);
+                return true;
+            }
+        }
+    }
+    // Unassigned menu actions also accept injected/unmapped controller input.
+    // Explicit player checks must retain identity, especially for joining P2.
+    if (player == PlayerNum::ALL) {
+        for (int button = 1; button <= 18; ++button)
+            if (ps5_controls::menu_action(button) == action && check_key_pressed(10000 + button, strength)) return true;
+    }
     return false;
 }
 #endif
@@ -149,6 +167,9 @@ void set_touch_drum_enabled(bool enabled) {
 
 static std::array<bool, SDL_SCANCODE_COUNT> previous_key_states{};
 static std::array<std::array<bool, 19>, 4> previous_gamepad_states{};
+#ifdef YATAIDON_PLATFORM_PS5
+static ps5_controls::ControllerSlots ps5_controller_slots;
+#endif
 
 // Gamepad/joystick buttons and axes are folded into the key space at these
 // offsets (config stores the bare button number).
@@ -173,16 +194,37 @@ bool is_input_key_pressed(const std::vector<int>& keys, const std::vector<int>& 
                                [strength](int button) { return check_key_pressed(10000 + button, strength); });
 }
 
-static bool keys_held(const std::vector<int>& keys, const std::vector<int>& pad) {
+static bool player_input_pressed(const std::vector<int>& keys, const std::vector<int>& buttons,
+                                 PlayerNum player, float* strength) {
+#ifdef YATAIDON_PLATFORM_PS5
+    if (ps5_controls::separate_players(global_data.current_screen)) {
+        for (int key : keys)
+            if (check_key_pressed(key, strength)) return true;
+        const int slot = player == PlayerNum::P2 ? 1 : 0;
+        return std::ranges::any_of(buttons, [slot, strength](int button) {
+            return check_key_pressed(ps5_controls::player_button_key(slot, button), strength);
+        });
+    }
+#endif
+    return is_input_key_pressed(keys, buttons, strength);
+}
+
+static bool keys_held(const std::vector<int>& keys, const std::vector<int>& pad, PlayerNum player) {
     for (int k : keys) {
         if (k >= 0 && k < std::ssize(previous_key_states) && previous_key_states[k]) {
             return true;
         }
     }
     for (int b : pad) {
-        if (b < 0 || b >= 18) {
+        if (b < 1 || b > 18) {
             continue;
         }
+#ifdef YATAIDON_PLATFORM_PS5
+        if (ps5_controls::separate_players(global_data.current_screen)) {
+            if (previous_gamepad_states[player == PlayerNum::P2 ? 1 : 0][b]) return true;
+            continue;
+        }
+#endif
         for (auto& g : previous_gamepad_states) {
             if (g[b]) {
                 return true;
@@ -197,25 +239,27 @@ bool is_kat_held(bool left, PlayerNum player_num) {
     bool p1 = player_num == PlayerNum::P1 || player_num == PlayerNum::ALL;
     bool p2 = player_num == PlayerNum::P2 || player_num == PlayerNum::ALL;
     return (p1 && keys_held(left ? c.keys_1p.left_kat : c.keys_1p.right_kat,
-                            left ? c.gamepad_1p.left_kat : c.gamepad_1p.right_kat)) ||
+                            left ? c.gamepad_1p.left_kat : c.gamepad_1p.right_kat, PlayerNum::P1)) ||
            (p2 && keys_held(left ? c.keys_2p.left_kat : c.keys_2p.right_kat,
-                            left ? c.gamepad_2p.left_kat : c.gamepad_2p.right_kat));
+                            left ? c.gamepad_2p.left_kat : c.gamepad_2p.right_kat, PlayerNum::P2));
 }
 
 bool is_l_don_pressed(PlayerNum player_num, float* strength) {
 #ifdef YATAIDON_PLATFORM_PS5
+    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+        return is_l_don_pressed(PlayerNum::P1, strength) || is_l_don_pressed(PlayerNum::P2, strength);
     if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, strength);
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, player_num, strength);
 #endif
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.left_don, global_data.config->gamepad_1p.left_don,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.left_don, global_data.config->gamepad_1p.left_don,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_L_DON, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.left_don, global_data.config->gamepad_2p.left_don,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.left_don, global_data.config->gamepad_2p.left_don,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -232,18 +276,20 @@ bool is_l_don_pressed(PlayerNum player_num, float* strength) {
 
 bool is_r_don_pressed(PlayerNum player_num, float* strength) {
 #ifdef YATAIDON_PLATFORM_PS5
+    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+        return is_r_don_pressed(PlayerNum::P1, strength) || is_r_don_pressed(PlayerNum::P2, strength);
     if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, strength);
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, player_num, strength);
 #endif
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.right_don, global_data.config->gamepad_1p.right_don,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.right_don, global_data.config->gamepad_1p.right_don,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_R_DON, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.right_don, global_data.config->gamepad_2p.right_don,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.right_don, global_data.config->gamepad_2p.right_don,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -272,18 +318,20 @@ bool menu_confirm_pressed(PlayerNum p) {
 
 bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
 #ifdef YATAIDON_PLATFORM_PS5
+    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+        return is_l_kat_pressed(PlayerNum::P1, strength) || is_l_kat_pressed(PlayerNum::P2, strength);
     if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Left, strength);
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Left, player_num, strength);
 #endif
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.left_kat, global_data.config->gamepad_1p.left_kat,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.left_kat, global_data.config->gamepad_1p.left_kat,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_L_KAT, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.left_kat, global_data.config->gamepad_2p.left_kat,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.left_kat, global_data.config->gamepad_2p.left_kat,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -300,18 +348,20 @@ bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
 
 bool is_r_kat_pressed(PlayerNum player_num, float* strength) {
 #ifdef YATAIDON_PLATFORM_PS5
+    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+        return is_r_kat_pressed(PlayerNum::P1, strength) || is_r_kat_pressed(PlayerNum::P2, strength);
     if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Right, strength);
+        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Right, player_num, strength);
 #endif
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.right_kat, global_data.config->gamepad_1p.right_kat,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.right_kat, global_data.config->gamepad_1p.right_kat,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_R_KAT, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.right_kat, global_data.config->gamepad_2p.right_kat,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.right_kat, global_data.config->gamepad_2p.right_kat,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -497,6 +547,9 @@ void poll_touch_once() {
 // Used by the polling thread on desktop and called directly per-frame on web.
 void poll_keyboard_once() {
 #ifdef YATAIDON_PLATFORM_PS5
+    if (SDL_Window* window = main_window(); window && SDL_IsScreenKeyboardShown(window)) return;
+#endif
+#ifdef YATAIDON_PLATFORM_PS5
     static int logged_controllers = -1;
     const int controllers = SDL_NumJoysticks();
     if (controllers != logged_controllers) {
@@ -560,8 +613,21 @@ void poll_keyboard_once() {
     };
     constexpr float TRIGGER_THRESHOLD = 0.1f;
 
+#ifdef YATAIDON_PLATFORM_PS5
+    std::vector<int> connected;
+    for (const auto& [id, gp] : sdl_gamepads) connected.push_back(id);
+    const auto previous_slots = ps5_controller_slots;
+    ps5_controller_slots.update(connected);
+    for (int slot = 0; slot < 4; ++slot)
+        if (previous_slots.device(slot) != ps5_controller_slots.device(slot))
+            previous_gamepad_states[slot].fill(false);
+#endif
     int gamepad = 0;
     for (auto& [id, gp] : sdl_gamepads) {
+#ifdef YATAIDON_PLATFORM_PS5
+        gamepad = ps5_controller_slots.slot(id);
+        if (gamepad < 0) continue;
+#endif
         if (gamepad >= 4) {
             break;
         }
@@ -576,9 +642,15 @@ void poll_keyboard_once() {
             bool previous_state = previous_gamepad_states[gamepad][btn];
             if (state[btn] && !previous_state) {
                 local_pressed.push_back(key);
+#ifdef YATAIDON_PLATFORM_PS5
+                local_pressed.push_back(ps5_controls::player_button_key(gamepad, btn));
+#endif
             }
             if (!state[btn] && previous_state) {
                 local_released.push_back(key);
+#ifdef YATAIDON_PLATFORM_PS5
+                local_released.push_back(ps5_controls::player_button_key(gamepad, btn));
+#endif
             }
             previous_gamepad_states[gamepad][btn] = state[btn];
         }
@@ -989,6 +1061,10 @@ void shutdown_sdl_joysticks() {
         SDL_CloseGamepad(gp);
     }
     sdl_gamepads.clear();
+#ifdef YATAIDON_PLATFORM_PS5
+    ps5_controller_slots = {};
+    for (auto& state : previous_gamepad_states) state.fill(false);
+#endif
     sdl_prev_button.clear();
     sdl_prev_axis.clear();
     SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
@@ -1009,9 +1085,14 @@ bool is_text_input_key(int key) {
            (key >= SDL_SCANCODE_LCTRL && key <= SDL_SCANCODE_RGUI);
 }
 
-void set_keyboard_visible(bool visible) {
+void set_keyboard_visible(bool visible, const std::string& initial_text) {
+#ifdef YATAIDON_PLATFORM_PS5
+    SDL_SetHint("YATAIDON_PS5_IME_TEXT", initial_text.c_str());
+#else
+    (void)initial_text;
+#endif
     keyboard_editing = visible;
-#if defined(PLATFORM_ANDROID) || defined(YATAIDON_PLATFORM_IOS)
+#if defined(PLATFORM_ANDROID) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
     SDL_Window* win = main_window();
     if (!win) {
         return;
@@ -1055,6 +1136,9 @@ void sync_text_input() {
 
 TextEditAction poll_text_edit(std::string& text, const std::function<bool(int)>& accept) {
     text_input_wanted = true;
+#ifdef YATAIDON_PLATFORM_PS5
+    if (yataidon_ime_take_replacement()) text.clear();
+#endif
     // Ctrl+V pastes the clipboard (first line only, UTF-8).
     if ((key_down(SDL_SCANCODE_LCTRL) || key_down(SDL_SCANCODE_RCTRL)) && key_pressed(SDL_SCANCODE_V)) {
         char* clip = SDL_GetClipboardText();

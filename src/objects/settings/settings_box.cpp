@@ -213,7 +213,7 @@ void SettingsBox::select_option() {
     }
     options[option_index]->is_highlighted = !options[option_index]->is_highlighted;
     if (options[option_index]->needs_text_input()) {
-        set_keyboard_visible(options[option_index]->is_highlighted);
+        set_keyboard_visible(options[option_index]->is_highlighted, options[option_index]->text_input_value());
     }
     options[option_index]->confirm();
 }

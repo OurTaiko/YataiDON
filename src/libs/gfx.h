@@ -143,6 +143,8 @@ void set_shader_value(Shader shader, int loc, const void* value, int uniform_typ
 void begin_shader_mode(Shader shader);
 void end_shader_mode();
 Image load_image(const char* path);
+// PNG/JPEG/BMP file contents
+Image load_image_from_memory(std::span<const unsigned char> data);
 Image load_image_from_texture(Texture tex);
 Image load_image_from_screen();
 void unload_image(Image image);

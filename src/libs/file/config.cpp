@@ -398,6 +398,13 @@ Config get_config() {
     config.gamepad_2p.left_don = parseIntArrayOrDefault(gamepad_2p_node, "left_don", {});
     config.gamepad_2p.right_don = parseIntArrayOrDefault(gamepad_2p_node, "right_don", {});
     config.gamepad_2p.right_kat = parseIntArrayOrDefault(gamepad_2p_node, "right_kat", {});
+#ifdef YATAIDON_PLATFORM_PS5
+    // Upgrade the previously empty P2 defaults once, preserving custom layouts.
+    if (config_file["ps5"]["p2_controller_layout_version"].value_or(0) < 1 &&
+        ps5_controls::apply_default_layout_if_empty(config.gamepad_2p)) {
+        spdlog::info("Applied DualSense P2 drum layout v1");
+    }
+#endif
 
     const toml::table* midi_node = config_file["midi"].as_table();
     config.midi.device = midi_node ? (*midi_node)["device"].value_or("") : "";
@@ -620,7 +627,7 @@ void save_config(const Config& config) {
                                              {"vsync", config.video.vsync}});
 
 #ifdef YATAIDON_PLATFORM_PS5
-    config_table.insert("ps5", toml::table{{"controller_layout_version", 2}});
+    config_table.insert("ps5", toml::table{{"controller_layout_version", 2}, {"p2_controller_layout_version", 1}});
 #endif
     fs::path tmp_path = config_path;
     tmp_path += ".tmp";

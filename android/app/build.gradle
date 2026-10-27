@@ -32,7 +32,8 @@ android {
                     "-DANDROID_STL=c++_shared",
                     "-DANDROID_PLATFORM=android-31",
                     "-DNETWORK_URL=${System.getenv('NETWORK_URL') ?: ''}",
-                    "-DNETWORK_AUTH_KEY=${System.getenv('NETWORK_AUTH_KEY') ?: ''}"
+                    "-DNETWORK_AUTH_KEY=${System.getenv('NETWORK_AUTH_KEY') ?: ''}",
+                    "-DYATAIDON_GFX_BACKEND=${findProperty('gfxBackend') ?: 'raylib'}"
                 )
             }
         }
@@ -41,7 +42,7 @@ android {
     externalNativeBuild {
         cmake {
             path '../../CMakeLists.txt'
-            version '3.31.6'
+            version findProperty('cmakeVersion') ?: '3.31.6'
         }
     }
 

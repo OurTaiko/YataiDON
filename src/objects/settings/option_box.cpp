@@ -256,6 +256,11 @@ void StrOptionBox::update(double current_time) {
             is_highlighted = false;
             set_keyboard_visible(false);
         }
+        if (action == TextEditAction::Cancel) {
+            input_string = value;
+            is_highlighted = false;
+            set_keyboard_visible(false);
+        }
         if (input_string != before) {
             rebuild_text();
         }

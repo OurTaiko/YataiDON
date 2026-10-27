@@ -203,18 +203,11 @@ std::optional<Screens> OnboardingScreen::update() {
         return on_screen_end(skinless_start ? Screens::LOADING : Screens::TITLE);
     }
 
+#ifdef YATAIDON_PLATFORM_PS5
     const int rows = kSkinCount + 2;
-    if (key_pressed(SDL_SCANCODE_UP)
-#ifdef YATAIDON_PLATFORM_PS5
-        || check_key_pressed(10000 + 1)
-#endif
-    ) {
+    if (key_pressed(SDL_SCANCODE_UP) || check_key_pressed(10000 + 1)) {
         row = (row + rows - 1) % rows;
-    } else if (key_pressed(SDL_SCANCODE_DOWN)
-#ifdef YATAIDON_PLATFORM_PS5
-        || check_key_pressed(10000 + 3)
-#endif
-    ) {
+    } else if (key_pressed(SDL_SCANCODE_DOWN) || check_key_pressed(10000 + 3)) {
         row = (row + 1) % rows;
     } else if (is_l_kat_pressed() || menu_left_pressed() || is_r_kat_pressed() || menu_right_pressed()) {
         if (row == online_row()) {
@@ -230,6 +223,24 @@ std::optional<Screens> OnboardingScreen::update() {
             begin_download();
         }
     }
+#else
+    // drum-only: don moves down (starts the download on Continue), kat toggles the current row
+    if (menu_confirm_pressed()) {
+        if (row == continue_row()) {
+            begin_download();
+        } else {
+            row++;
+        }
+    } else if (menu_left_pressed() || menu_right_pressed()) {
+        if (row < kSkinCount) {
+            toggle_skin(row);
+        } else if (row == online_row()) {
+            online = !online;
+        } else {
+            row = 0; // kat on Continue: back to the top
+        }
+    }
+#endif
     return std::nullopt;
 }
 
@@ -281,7 +292,7 @@ void OnboardingScreen::draw() {
 #ifdef YATAIDON_PLATFORM_PS5
     draw_line("D-pad Up/Down: move    Cross: select", 650 * s, static_cast<int>(20 * s),
 #else
-    draw_line("Up/Down: move    Enter / don: select    Left/Right: toggle online", 650 * s, static_cast<int>(20 * s),
+    draw_line("Don: next / continue    Ka: toggle", 650 * s, static_cast<int>(20 * s),
 #endif
               Color::GRAY);
 }

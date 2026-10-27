@@ -307,6 +307,7 @@ void SongSelectScreen::start_search() {
     // queued in raylib's char buffer; drop it so it does not land in the query.
     while (char_pressed() > 0) {
     }
+    set_keyboard_visible(true);
 }
 
 std::optional<Screens> SongSelectScreen::update() {
@@ -386,7 +387,6 @@ std::optional<Screens> SongSelectScreen::update() {
             });
         } else if (state == SongSelectState::SEARCHING) {
             start_search();
-            set_keyboard_visible(true);
         } else if (state == SongSelectState::DAN_SELECTED) {
             dan_transition.emplace();
             dan_transition->start();
