@@ -13,6 +13,7 @@
 #include <portaudio.h>
 #endif
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -43,7 +44,34 @@ struct VirtualFile {
     sf_count_t pos = 0;
 };
 
-struct sound {
+enum class PlayerNum;
+
+// Player-owned callbacks (including skin Lua calls) inherit this audio owner.
+class PlayerSoundScope {
+    int previous;
+    static thread_local int current;
+public:
+    explicit PlayerSoundScope(PlayerNum player);
+    ~PlayerSoundScope();
+    PlayerSoundScope(const PlayerSoundScope&) = delete;
+    PlayerSoundScope& operator=(const PlayerSoundScope&) = delete;
+    static int player() { return current; }
+};
+
+struct SoundPlayback {
+    bool is_playing = false;        // Whether the sound is currently playing
+    unsigned int current_frame = 0; // Current playback position in frames
+    float frame_frac = 0.0f;        // Fractional part of playback position (for pitch != 1.0)
+    bool loop = false;              // Whether to loop the sound
+
+    float volume = 1.0f; // Volume multiplier (0.0 to 1.0+)
+    float playback_gain = 1.0f;
+    float pan = 0.5f;   // Stereo pan (0.0 = left, 0.5 = center, 1.0 = right)
+    float pitch = 1.0f; // Pitch/speed multiplier (1.0 = normal)
+
+};
+
+struct sound : SoundPlayback {
 #ifdef YATAIDON_PLATFORM_PS5
     std::shared_ptr<float[]> cached_data;
 #endif
@@ -52,16 +80,10 @@ struct sound {
     unsigned int sample_rate = 0; // Original sample rate of the audio
     unsigned int channels = 0;    // Number of channels (1 = mono, 2 = stereo)
 
-    bool is_playing = false;        // Whether the sound is currently playing
-    unsigned int current_frame = 0; // Current playback position in frames
-    float frame_frac = 0.0f;        // Fractional part of playback position (for pitch != 1.0)
-    bool loop = false;              // Whether to loop the sound
-
     float normalization_gain = 1.0f;
-    float volume = 1.0f; // Volume multiplier (0.0 to 1.0+)
-    float playback_gain = 1.0f;
-    float pan = 0.5f;   // Stereo pan (0.0 = left, 0.5 = center, 1.0 = right)
-    float pitch = 1.0f; // Pitch/speed multiplier (1.0 = normal)
+    // Independent cursors over the same immutable PCM, so simultaneous hits
+    // from both players neither restart each other nor copy sample buffers.
+    std::array<SoundPlayback, 2> player_playback;
 
     SRC_STATE* resampler = nullptr;   // libsamplerate state (if needed)
     float* resample_buffer = nullptr; // Buffer for resampled audio
@@ -123,6 +145,9 @@ public:
     void unload_all_sounds();
     void store_sound(const std::string& name, const sound& snd);
     void play_sound(const std::string& name, VolumePreset volume_preset = VolumePreset::NONE, float gain = 1.0f);
+    void play_player_sound(const std::string& name, PlayerNum player,
+                           VolumePreset preset = VolumePreset::NONE, float gain = 1.0f);
+    void set_two_player_mode(bool enabled);
     bool has_sound(const std::string& name);
     void stop_sound(const std::string& name);
     void set_sound_loop(const std::string& name, bool loop);
@@ -164,9 +189,8 @@ public:
     void stop_music_stream(const std::string& name);
     void unload_music_stream(const std::string& name);
     void unload_all_music();
-#ifdef YATAIDON_PLATFORM_IOS
-    void suspend_ios_audio(bool suspended);
-#endif
+    // Pauses the SDL output device while a mobile app is backgrounded.
+    void set_suspended(bool suspended);
     void seek_music_stream(const std::string& name, float position);
 
 private:
@@ -198,6 +222,9 @@ private:
     PaStream* pa_stream = nullptr; // WDM-KS/MME
 #endif
 
+    bool two_player_mode = false; // protected by rw_lock
+    int sound_player(const std::string& name, VolumePreset preset = VolumePreset::NONE) const;
+    std::array<SoundPlayback*, 3> sound_playbacks(sound& sample, const std::string& name);
     std::unordered_map<std::string, sound> sounds;
     std::unordered_map<std::string, music> music_streams;
 

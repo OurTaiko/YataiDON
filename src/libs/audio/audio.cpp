@@ -1,20 +1,11 @@
 #include "audio.h"
 #include "../atomic_ref_compat.h"
 
+#include "../../platform/platform_ios.h"
+#include "../../platform/platform_windows.h"
 #include "../profiler.h"
 #include "loudness.h"
 #include "spdlog/spdlog.h"
-#ifdef YATAIDON_PLATFORM_IOS
-#include "../../platform/platform_ios.h"
-#endif
-#ifdef _WIN32
-#include "../../platform/platform_windows.h"
-#endif
-
-// Global iOS audio stream for platform access
-#ifdef YATAIDON_PLATFORM_IOS
-SDL_AudioStream* g_ios_audio_stream = nullptr;
-#endif
 #ifdef SUPPORT_FUMEN
 #include "../optional/nub.h"
 #include "../optional/nus3bank.h"
@@ -397,24 +388,24 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
 
     std::shared_lock<std::shared_mutex> guard(engine->rw_lock);
 
-    for (auto& [name, snd] : engine->sounds) {
+    auto mix_sound = [&](const sound& sample, SoundPlayback& snd, int channel) {
         yd::atomic_ref<bool> aref_playing(snd.is_playing);
         yd::atomic_ref<unsigned int> aref_frame(snd.current_frame);
 
         if (!aref_playing.load(std::memory_order_acquire)) {
-            continue;
+            return;
         }
 
         const float volume = yd::atomic_ref<float>(snd.volume).load(std::memory_order_relaxed) *
                              yd::atomic_ref<float>(snd.playback_gain).load(std::memory_order_relaxed) *
-                             snd.normalization_gain;
+                             sample.normalization_gain;
 
         const float pan = yd::atomic_ref<float>(snd.pan).load(std::memory_order_relaxed);
         unsigned int frame = aref_frame.load(std::memory_order_relaxed);
 
         const float pitch = yd::atomic_ref<float>(snd.pitch).load(std::memory_order_relaxed);
-        const float* data_ptr = snd.data;
-        const unsigned int channels = snd.channels;
+        const float* data_ptr = sample.data;
+        const unsigned int channels = sample.channels;
 
         unsigned long frames_to_process = framesPerBuffer;
         unsigned long output_index = 0;
@@ -428,8 +419,8 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
 
         while (frames_to_process > 0 && still_playing) {
             unsigned long src_frame = static_cast<unsigned long>(frame_f);
-            if (src_frame >= snd.frame_count) {
-                if (yd::atomic_ref<bool>(snd.loop).load(std::memory_order_relaxed) && snd.frame_count > 0) {
+            if (src_frame >= sample.frame_count) {
+                if (yd::atomic_ref<bool>(snd.loop).load(std::memory_order_relaxed) && sample.frame_count > 0) {
                     frame_f = 0.0;
                     continue;
                 }
@@ -442,7 +433,14 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
             unsigned long dst_index = output_index * 2;
             float left, right;
 
-            if (channels == 1) {
+            if (channel >= 0) {
+                // Preserve both source channels when folding a stereo effect
+                // into its player's channel; do not drop half of the recording.
+                const float mono = channels == 1 ? data_ptr[src_index] :
+                                   0.5f * (data_ptr[src_index] + data_ptr[src_index + 1]);
+                left = channel == 0 ? mono : 0.0f;
+                right = channel == 1 ? mono : 0.0f;
+            } else if (channels == 1) {
                 float sample = data_ptr[src_index];
                 left = sample * (1.0f - pan);
                 right = sample * pan;
@@ -470,6 +468,11 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
         if (!still_playing) {
             aref_playing.store(false, std::memory_order_release);
         }
+    };
+    for (auto& [name, sample] : engine->sounds) {
+        mix_sound(sample, sample, -1);
+        mix_sound(sample, sample.player_playback[0], 0);
+        mix_sound(sample, sample.player_playback[1], 1);
     }
 
     for (auto& [name, mus] : engine->music_streams) {
@@ -790,6 +793,17 @@ bool AudioEngine::init_rtaudio_device(RtAudio::Api api, const char* label) {
 }
 #endif
 
+void AudioEngine::set_suspended(bool suspended) {
+    if (!sdl_stream) {
+        return;
+    }
+    if (suspended) {
+        SDL_PauseAudioStreamDevice(sdl_stream);
+    } else {
+        SDL_ResumeAudioStreamDevice(sdl_stream);
+    }
+}
+
 bool AudioEngine::init_sdl3_device() {
 #ifdef YATAIDON_PLATFORM_PS5
     target_sample_rate = 48000;
@@ -851,10 +865,6 @@ bool AudioEngine::init_sdl3_device() {
         }
         return false;
     }
-
-#ifdef YATAIDON_PLATFORM_IOS
-    g_ios_audio_stream = sdl_stream;
-#endif
 
     if (!SDL_ResumeAudioStreamDevice(sdl_stream)) {
         spdlog::error("Failed to start SDL audio stream: {}", SDL_GetError());
@@ -1058,6 +1068,12 @@ void AudioEngine::store_sound(const std::string& name, const sound& snd) {
 #ifdef YATAIDON_PLATFORM_PS5
     if (name == "bgm" || name.ends_with("_bgm")) sounds[name].loop = true;
 #endif
+    for (auto& voice : sounds[name].player_playback) {
+        voice = static_cast<const SoundPlayback&>(sounds[name]);
+        voice.is_playing = false;
+        voice.current_frame = 0;
+        voice.frame_frac = 0.0f;
+    }
 }
 
 void AudioEngine::queue_song_loudness(const fs::path& file_path, bool priority) {
@@ -1438,6 +1454,47 @@ static float get_preset_volume(const VolumeConfig& volumes, VolumePreset preset)
     return match != std::end(presets) ? volumes.*(match->member) : 1.0f;
 }
 
+thread_local int PlayerSoundScope::current = 0;
+PlayerSoundScope::PlayerSoundScope(PlayerNum player) : previous(current) {
+    current = static_cast<int>(player);
+}
+PlayerSoundScope::~PlayerSoundScope() { current = previous; }
+
+void AudioEngine::set_two_player_mode(bool enabled) {
+    std::unique_lock guard(rw_lock);
+    two_player_mode = enabled;
+    if (!enabled) {
+        for (auto& [name, sample] : sounds) {
+            for (auto& voice : sample.player_playback) {
+                voice.is_playing = false;
+            }
+        }
+    }
+}
+
+int AudioEngine::sound_player(const std::string& name, VolumePreset preset) const {
+    if (!two_player_mode || preset == VolumePreset::MUSIC || name == "bgm" || name.ends_with("_bgm")) {
+        return -1;
+    }
+    const int player = PlayerSoundScope::player();
+    if (player == 1 || player == 2) return player - 1;
+    // Existing skins also identify player-specific announcements by name.
+    if (name.ends_with("_1p")) return 0;
+    if (name.ends_with("_2p")) return 1;
+    return -1;
+}
+
+std::array<SoundPlayback*, 3> AudioEngine::sound_playbacks(sound& sample, const std::string& name) {
+    const int player = sound_player(name);
+    if (player >= 0) return {&sample.player_playback[player], nullptr, nullptr};
+    return {&sample, &sample.player_playback[0], &sample.player_playback[1]};
+}
+
+void AudioEngine::play_player_sound(const std::string& name, PlayerNum player, VolumePreset preset, float gain) {
+    PlayerSoundScope scope(player);
+    play_sound(name, preset, gain);
+}
+
 void AudioEngine::play_sound(const std::string& name, VolumePreset volume_preset, float gain) {
     bool first_request;
     {
@@ -1447,7 +1504,8 @@ void AudioEngine::play_sound(const std::string& name, VolumePreset volume_preset
     std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        sound& snd = it->second;
+        const int player = sound_player(name, volume_preset);
+        SoundPlayback& snd = player < 0 ? static_cast<SoundPlayback&>(it->second) : it->second.player_playback[player];
 
         if (volume_preset != VolumePreset::NONE) {
             const float volume = get_preset_volume(volume_presets, volume_preset);
@@ -1472,9 +1530,11 @@ void AudioEngine::stop_sound(const std::string& name) {
     std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        yd::atomic_ref<bool>(it->second.is_playing).store(false, std::memory_order_relaxed);
-        yd::atomic_ref<unsigned int>(it->second.current_frame).store(0, std::memory_order_relaxed);
-        yd::atomic_ref<float>(it->second.frame_frac).store(0.0f, std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(it->second, name)) if (voice) {
+            yd::atomic_ref<bool>(voice->is_playing).store(false, std::memory_order_relaxed);
+            yd::atomic_ref<unsigned int>(voice->current_frame).store(0, std::memory_order_relaxed);
+            yd::atomic_ref<float>(voice->frame_frac).store(0.0f, std::memory_order_relaxed);
+        }
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1484,7 +1544,11 @@ void AudioEngine::set_sound_loop(const std::string& name, bool loop) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        yd::atomic_ref<bool>(it->second.loop).store(loop, std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(it->second, name)) {
+            if (voice) {
+                yd::atomic_ref<bool>(voice->loop).store(loop, std::memory_order_relaxed);
+            }
+        }
     }
 }
 
@@ -1492,7 +1556,9 @@ bool AudioEngine::is_sound_playing(const std::string& name) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        return yd::atomic_ref<bool>(it->second.is_playing).load(std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(it->second, name))
+            if (voice && yd::atomic_ref<bool>(voice->is_playing).load(std::memory_order_relaxed)) return true;
+        return false;
     }
     spdlog::warn("Sound {} not found", name);
     return false;
@@ -1502,7 +1568,11 @@ void AudioEngine::set_sound_volume(const std::string& name, float volume) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        yd::atomic_ref<float>(it->second.volume).store(std::clamp(volume, 0.0f, 1.0f), std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(it->second, name)) {
+            if (voice) {
+                yd::atomic_ref<float>(voice->volume).store(std::clamp(volume, 0.0f, 1.0f), std::memory_order_relaxed);
+            }
+        }
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1512,7 +1582,11 @@ void AudioEngine::set_sound_pan(const std::string& name, float pan) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        yd::atomic_ref<float>(it->second.pan).store(std::clamp(pan, 0.0f, 1.0f), std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(it->second, name)) {
+            if (voice) {
+                yd::atomic_ref<float>(voice->pan).store(std::clamp(pan, 0.0f, 1.0f), std::memory_order_relaxed);
+            }
+        }
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1525,7 +1599,11 @@ void AudioEngine::set_sound_pitch(const std::string& name, float pitch) {
         if (!std::isfinite(pitch)) {
             pitch = 1.0f;
         }
-        yd::atomic_ref<float>(it->second.pitch).store(std::clamp(pitch, 0.01f, 16.0f), std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(it->second, name)) {
+            if (voice) {
+                yd::atomic_ref<float>(voice->pitch).store(std::clamp(pitch, 0.01f, 16.0f), std::memory_order_relaxed);
+            }
+        }
     } else {
         spdlog::warn("Sound {} not found", name);
     }
@@ -1535,7 +1613,10 @@ float AudioEngine::get_sound_time_played(const std::string& name) const {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        unsigned int frame = yd::atomic_ref<unsigned int>(const_cast<unsigned int&>(it->second.current_frame))
+        const int player = sound_player(name);
+        const SoundPlayback& voice = player < 0 ? static_cast<const SoundPlayback&>(it->second)
+                                                : it->second.player_playback[player];
+        unsigned int frame = yd::atomic_ref<unsigned int>(const_cast<unsigned int&>(voice.current_frame))
                                  .load(std::memory_order_relaxed);
         return static_cast<float>(frame) / static_cast<float>(target_sample_rate);
     }
@@ -1560,9 +1641,10 @@ void AudioEngine::seek_sound(const std::string& name, float position) {
         sound& snd = it->second;
         unsigned int frame =
             static_cast<unsigned int>(std::max(position, 0.0f) * static_cast<float>(target_sample_rate));
-        yd::atomic_ref<unsigned int>(snd.current_frame)
-            .store(std::min(frame, snd.frame_count), std::memory_order_relaxed);
-        yd::atomic_ref<float>(snd.frame_frac).store(0.0f, std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(snd, name)) if (voice) {
+            yd::atomic_ref<unsigned int>(voice->current_frame).store(std::min(frame, snd.frame_count), std::memory_order_relaxed);
+            yd::atomic_ref<float>(voice->frame_frac).store(0.0f, std::memory_order_relaxed);
+        }
     } else {
         spdlog::warn("Sound {} not found", name);
     }

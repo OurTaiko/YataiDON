@@ -11,6 +11,7 @@
 #include <string_view>
 #include <thread>
 
+#include "../../platform/platform_windows.h"
 #include "../file/filesystem.h"
 #include "../file/script.h"
 #include "../gfx.h"
@@ -29,10 +30,6 @@ static AssetCache<CachedGPUTexture>& gpu_asset_cache() {
     return cache;
 }
 void clear_ps5_texture_cache() { gpu_asset_cache().clear(); }
-#endif
-
-#ifdef _WIN32
-#include "../../platform/platform_windows.h"
 #endif
 
 namespace {

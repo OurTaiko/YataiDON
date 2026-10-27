@@ -11,6 +11,8 @@ private:
     PlayerNum restart_player_num() const override { return PlayerNum::P1; }
 
 public:
+    bool two_player_audio() const override { return true; }
+
     Game2PScreen() : GameScreen("game") {}
 
     PlayerNum scene_player_num() const override { return PlayerNum::TWO_PLAYER; }

@@ -1,3 +1,4 @@
+#include "platform.h"
 #include "platform_ios.h"
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
@@ -17,7 +18,7 @@ void ios_request_audio_buffer() {
     }
 }
 
-void ios_prepare_filesystem() {
+std::filesystem::path platform_get_working_directory() {
     namespace fs = std::filesystem;
     @autoreleasepool {
         NSURL* documents = [[[NSFileManager defaultManager]
@@ -57,6 +58,6 @@ void ios_prepare_filesystem() {
             }
         }
         fs::create_directories(destination / "Songs");
-        fs::current_path(destination);
+        return destination;
     }
 }

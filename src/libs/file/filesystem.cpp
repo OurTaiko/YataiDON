@@ -11,40 +11,15 @@
 #include <spdlog/spdlog.h>
 #include <unordered_set>
 
-#ifdef YATAIDON_PLATFORM_IOS
-#include "../../platform/platform_ios.h"
-#endif
-
+#include "../../platform/platform.h"
 #ifdef YATAIDON_PLATFORM_PS5
 #include "../../platform/platform_ps5.h"
 #include "../asset_cache.h"
-#elif defined(_WIN32)
-#include "../../platform/platform_windows.h"
-#elif defined(__APPLE__) && !defined(YATAIDON_PLATFORM_IOS)
-#include "../../platform/platform_macos.h"
-#elif defined(__ANDROID__)
-#include "../../platform/platform_android.h"
-#elif defined(__EMSCRIPTEN__)
-#include "../../platform/platform_emscripten.h"
-#else
-#include "../../platform/platform_linux.h"
 #endif
+#include "../../platform/platform_windows.h"
 
 void set_working_directory_to_executable() {
-    std::filesystem::path exe_dir;
-#ifdef YATAIDON_PLATFORM_IOS
-    ios_prepare_filesystem();
-#elif defined(__ANDROID__)
-    exe_dir = android_get_working_directory();
-#elif defined(__EMSCRIPTEN__)
-    exe_dir = emscripten_get_working_directory();
-#elif _WIN32
-    exe_dir = win32_get_executable_dir();
-#elif defined(__APPLE__) && !defined(YATAIDON_PLATFORM_IOS)
-    exe_dir = macos_get_executable_dir();
-#else
-    exe_dir = unix_get_executable_dir();
-#endif
+    const std::filesystem::path exe_dir = platform_get_working_directory();
     if (exe_dir.empty()) {
         return;
     }

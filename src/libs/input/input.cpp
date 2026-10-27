@@ -64,12 +64,8 @@ static bool ps5_menu_press(ps5_controls::MenuAction action, PlayerNum player, fl
 // and the iOS screen-keyboard/touch-navigation functions. The Linux text-input
 // handling used to live in platform_linux.cpp and has been folded into this
 // file (handle_linux_text_input below).
-#ifdef _WIN32
-#include "../../platform/platform_windows.h"
-#elif defined(YATAIDON_PLATFORM_IOS)
 #include "../../platform/platform_ios.h"
-#endif
-
+#include "../../platform/platform_windows.h"
 #include "../gfx/sdl_compat.h"
 std::atomic<bool> input_thread_running{true};
 std::thread input_thread;

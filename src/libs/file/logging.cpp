@@ -25,19 +25,7 @@
 #include <cpptrace/cpptrace.hpp>
 #endif
 
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../../platform/platform_ps5.h"
-#elif defined(_WIN32)
-#include "../../platform/platform_windows.h"
-#elif defined(__APPLE__) && !defined(YATAIDON_PLATFORM_IOS)
-#include "../../platform/platform_macos.h"
-#elif defined(__ANDROID__)
-#include "../../platform/platform_android.h"
-#elif defined(__EMSCRIPTEN__)
-#include "../../platform/platform_emscripten.h"
-#elif !defined(YATAIDON_PLATFORM_IOS)
-#include "../../platform/platform_linux.h"
-#endif
+#include "../../platform/platform.h"
 
 static void log_stacktrace() {
 #if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
@@ -68,17 +56,7 @@ void handle_exception() {
 
 static void install_crash_handlers() {
     std::set_terminate(handle_exception);
-#ifdef _WIN32
-    win32_install_crash_handlers();
-#elif defined(__APPLE__) && !defined(YATAIDON_PLATFORM_IOS)
-    macos_install_crash_handlers();
-#elif defined(__ANDROID__)
-    android_install_crash_handlers();
-#elif defined(__EMSCRIPTEN__)
-    emscripten_install_crash_handlers();
-#elif !defined(YATAIDON_PLATFORM_IOS)
-    unix_install_crash_handlers();
-#endif
+    platform_install_crash_handlers();
 }
 
 static spdlog::level::level_enum parse_log_level(const std::string& log_level_str) {

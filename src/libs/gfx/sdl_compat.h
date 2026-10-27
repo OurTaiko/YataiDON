@@ -276,6 +276,10 @@ inline YD_AudioStream* SDL_OpenAudioDeviceStream(SDL_AudioDeviceID devid, const 
     yd_last_audio_stream() = s;
     return s; // starts paused, like SDL3
 }
+inline bool SDL_PauseAudioStreamDevice(YD_AudioStream* s) {
+    SDL_PauseAudioDevice(s->dev, 1);
+    return true;
+}
 inline bool SDL_ResumeAudioStreamDevice(YD_AudioStream* s) {
     SDL_PauseAudioDevice(s->dev, 0);
     return true;

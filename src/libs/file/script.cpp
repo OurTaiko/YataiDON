@@ -964,7 +964,8 @@ void ScriptManager::register_lua_bindings() {
     sol::table audio_tbl = lua.create_table();
 
     audio_tbl.set_function(
-        "play_sound", [](const std::string& name, sol::optional<std::string> preset_str, sol::optional<bool> loop) {
+        "play_sound", [](const std::string& name, sol::optional<std::string> preset_str, sol::optional<bool> loop,
+                         sol::optional<int> player) {
             struct NamedPreset {
                 std::string_view name;
                 VolumePreset preset;
@@ -985,6 +986,8 @@ void ScriptManager::register_lua_bindings() {
                     preset = match->preset;
                 }
             }
+            PlayerSoundScope audio_owner(preset == VolumePreset::MUSIC ? PlayerNum::ALL :
+                static_cast<PlayerNum>(player.value_or(PlayerSoundScope::player())));
 #ifdef YATAIDON_PLATFORM_PS5
             audio.set_sound_loop(name, loop.value_or(name == "bgm" || name.ends_with("_bgm")));
 #else

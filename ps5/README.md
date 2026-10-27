@@ -144,7 +144,7 @@ by the packaging script.
 
 ## Dependency revisions
 
-- Upstream merge: `2ee6189` (2026-10-27 snapshot).
+- Upstream merge: `b88825f` (2026-10-27 snapshot).
 - PS5 SDL: `8c56053f13ca13a0c050de613706ff69eb615836`.
 - bgfx.cmake `v1.167.9590-598`, matching upstream. The release tarball SHA256 and
   original/patched file hashes are checked by preparation tools.

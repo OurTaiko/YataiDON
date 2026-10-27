@@ -19,18 +19,13 @@
 #include "libs/profiler.h"
 #include "libs/screen.h"
 #include "libs/video/webcam.h"
-
+#include "platform/platform.h"
 #ifdef YATAIDON_PLATFORM_PS5
 #include "platform/platform_ps5.h"
-#elif defined(_WIN32)
-#include "platform/platform_windows.h"
-#elif defined(__ANDROID__)
-#include "platform/platform_android.h"
-#elif defined(__EMSCRIPTEN__)
-#include "platform/platform_emscripten.h"
-#elif defined(__linux__)
-#include "platform/platform_linux.h"
 #endif
+#include "platform/platform_emscripten.h"
+#include "platform/platform_ios.h"
+#include "platform/platform_windows.h"
 
 #ifdef PLATFORM_ANDROID
 #include "libs/gfx/sdl_main_compat.h"
@@ -411,11 +406,9 @@ static void run_frame() {
     g_frame_ms = get_current_ms();
 
     poll_input_events();
-#if defined(YATAIDON_PLATFORM_IOS)
-    if (ios_is_suspended_state()) {
+    if (platform_is_suspended()) {
         return;
     }
-#endif
 #if defined(YATAIDON_PLATFORM_IOS) || defined(__EMSCRIPTEN__) || defined(YATAIDON_PLATFORM_PS5)
     poll_keyboard_once(); // no input thread on these platforms
 #endif
@@ -688,9 +681,7 @@ int main(int argc, char* argv[]) {
         skin_updater.start();
     }
 
-#ifdef YATAIDON_PLATFORM_IOS
-    ios_initialize_after_window();
-#endif
+    platform_initialize_after_window();
 
     double target_fps = global_data.config->video.target_fps;
 #ifdef YATAIDON_PLATFORM_PS5
@@ -766,11 +757,7 @@ int main(int argc, char* argv[]) {
     unload_skin();
     delete global_data.config;
     global_data.config = nullptr;
-#if defined(__linux__) && !defined(__ANDROID__)
-    unix_close_window();
-#else
-    close_window();
-#endif
+    platform_close_window();
     spdlog::info("Game closed");
 #endif
     return 0;

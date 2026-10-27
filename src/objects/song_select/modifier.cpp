@@ -37,6 +37,7 @@ void ModifierSelector::set_bool(int mod_index, bool value) {
 }
 
 ModifierSelector::ModifierSelector(PlayerNum player_num, PlayerData* player) : player_num(player_num), player(player) {
+    PlayerSoundScope audio_owner(player_num);
     static int next_instance_id = 0;
     instance_id = ++next_instance_id;
     current_mod_index = 0;
@@ -62,7 +63,7 @@ ModifierSelector::ModifierSelector(PlayerNum player_num, PlayerData* player) : p
     move_sideways = dynamic_cast<MoveAnimation*>(tex.get_animation(31, true));
     fade_sideways = dynamic_cast<FadeAnimation*>(tex.get_animation(32, true));
 
-    audio.play_sound("voice_options_" + std::to_string(static_cast<int>(player_num)) + "p", VolumePreset::VOICE);
+    audio.play_player_sound("voice_options_" + std::to_string(static_cast<int>(player_num)) + "p", player_num, VolumePreset::VOICE);
 }
 
 ModifierSelector::~ModifierSelector() {
@@ -116,11 +117,12 @@ void ModifierSelector::step_neiro(int dir) {
                                  "hit_sounds" / std::to_string(neiro_index);
     neiro_preview = audio.load_sound(base / (neiro_index == 0 ? "don.wav" : "don.ogg"), "hit_sound");
     if (!neiro_preview.empty()) {
-        audio.play_sound(neiro_preview, VolumePreset::HITSOUND);
+        audio.play_player_sound(neiro_preview, player_num, VolumePreset::HITSOUND);
     }
 }
 
 void ModifierSelector::update(double current_ms) {
+    PlayerSoundScope audio_owner(player_num);
     move->update(current_ms);
     blue_arrow_fade->update(current_ms);
     blue_arrow_move->update(current_ms);

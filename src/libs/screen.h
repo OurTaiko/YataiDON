@@ -95,7 +95,11 @@ public:
 
     virtual ~Screen() = default;
 
+    // Scene identity is independent of its shared skin name and login seat.
+    virtual bool two_player_audio() const { return false; }
+
     virtual void on_screen_start() {
+        audio.set_two_player_mode(two_player_audio());
 #ifdef YATAIDON_PLATFORM_PS5
         const double begin_ms = get_current_ms();
         spdlog::info("PS5 loading {} textures", screen_name);

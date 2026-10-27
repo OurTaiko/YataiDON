@@ -2,8 +2,6 @@
 
 #include <filesystem>
 
-std::filesystem::path unix_get_executable_dir();
-void unix_install_crash_handlers();
 void ps5_init_window(int refresh_hz);
 int ps5_output_refresh_hz();
 int ps5_apply_output_refresh(int refresh_hz);

@@ -6,6 +6,7 @@
 
 ComboAnnounce::ComboAnnounce(int combo, double current_ms, PlayerNum player_num)
     : combo(combo), wait(current_ms), player_num(player_num) {
+    PlayerSoundScope audio_owner(player_num);
 
     fade = dynamic_cast<FadeAnimation*>(tex.get_animation(65, true));
     if (fade == nullptr) {
@@ -19,6 +20,7 @@ ComboAnnounce::ComboAnnounce(int combo, double current_ms, PlayerNum player_num)
 }
 
 void ComboAnnounce::update(double current_ms) {
+    PlayerSoundScope audio_owner(player_num);
     if (is_finished && fade->is_finished) {
         return;
     }
@@ -35,12 +37,13 @@ void ComboAnnounce::update(double current_ms) {
         std::string sound_name =
             "combo_" + std::to_string(combo) + "_" + std::to_string(static_cast<int>(player_num)) + "p";
         if (audio.has_sound(sound_name)) {
-            audio.play_sound(sound_name, VolumePreset::VOICE);
+            audio.play_player_sound(sound_name, player_num, VolumePreset::VOICE);
         }
     }
 }
 
 void ComboAnnounce::draw(float y) {
+    PlayerSoundScope audio_owner(player_num);
     if (combo == 0) {
         return;
     }

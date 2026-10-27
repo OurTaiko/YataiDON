@@ -13,6 +13,7 @@ void EntryScreen::on_screen_start() {
     Screen::on_screen_start();
     side = 1;
     is_2p = false;
+    audio.set_two_player_mode(false);
     box_manager = std::make_unique<BoxManager>(global_data.entry_join_pending);
     if (global_data.config->network.auto_login) {
         state = EntryState::SELECT_SIDE;
@@ -314,8 +315,10 @@ void EntryScreen::on_card_login() {
 }
 
 void EntryScreen::start_second_player_join() {
+    audio.set_two_player_mode(true);
     const PlayerNum first = global_data.entry_joined_seat;
     const PlayerNum second = (first == PlayerNum::P1) ? PlayerNum::P2 : PlayerNum::P1;
+    PlayerSoundScope audio_owner(second);
 
     side = (first == PlayerNum::P1) ? 0 : 2;
     global_data.player_num = first;
@@ -392,6 +395,7 @@ bool EntryScreen::seat_joined(PlayerNum player_num) const {
 }
 
 void EntryScreen::join_player(PlayerNum player_num, bool do_login) {
+    PlayerSoundScope audio_owner(player_num);
     bool loading = false;
     if (do_login && !login_ready_) {
         if (login_pending()) {
@@ -412,6 +416,7 @@ void EntryScreen::join_player(PlayerNum player_num, bool do_login) {
     global_data.player_num = player_num;
 
     if (players[0]) {
+        audio.set_two_player_mode(true);
         players[1] = std::make_unique<EntryPlayer>(global_data.player_num, side, box_manager.get());
         players[1]->start_animations(loading && !network_msg.available);
         global_data.player_num = PlayerNum::P1;
@@ -421,6 +426,7 @@ void EntryScreen::join_player(PlayerNum player_num, bool do_login) {
         players[0] = std::make_unique<EntryPlayer>(global_data.player_num, side, box_manager.get());
         players[0]->start_animations(loading && !network_msg.available);
         is_2p = false;
+        audio.set_two_player_mode(false);
     }
     audio.play_sound("cloud", VolumePreset::SOUND);
     audio.play_sound("entry_start_" + std::to_string(static_cast<int>(player_num)) + "p", VolumePreset::VOICE);

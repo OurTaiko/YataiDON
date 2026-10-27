@@ -1,4 +1,5 @@
 #include "background.h"
+#include "../../libs/audio/audio.h"
 
 #include "../../libs/file/script.h"
 
@@ -90,6 +91,7 @@ void Background::update(double current_ms, float bpm) {
 }
 
 void Background::handle_good(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_good.valid()) {
         return;
     }
@@ -101,6 +103,7 @@ void Background::handle_good(PlayerNum player_num) {
 }
 
 void Background::handle_ok(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_ok.valid()) {
         return;
     }
@@ -112,6 +115,7 @@ void Background::handle_ok(PlayerNum player_num) {
 }
 
 void Background::handle_bad(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_bad.valid()) {
         return;
     }
@@ -123,6 +127,7 @@ void Background::handle_bad(PlayerNum player_num) {
 }
 
 void Background::handle_drumroll(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_drumroll.valid()) {
         return;
     }
@@ -134,6 +139,7 @@ void Background::handle_drumroll(PlayerNum player_num) {
 }
 
 void Background::handle_balloon(PlayerNum player_num, int remaining) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_balloon.valid()) {
         return;
     }
@@ -146,6 +152,7 @@ void Background::handle_balloon(PlayerNum player_num, int remaining) {
 
 // A kusudama hit: skins without handle_kusudama get handle_balloon, as before.
 void Background::handle_kusudama(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_kusudama.valid()) {
         handle_balloon(player_num);
         return;
@@ -159,6 +166,7 @@ void Background::handle_kusudama(PlayerNum player_num) {
 
 void Background::handle_gauge(PlayerNum player_num, float progress, bool is_clear, bool is_rainbow,
                               float clear_progress, float flash) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_gauge.valid()) {
         return;
     }
@@ -171,6 +179,7 @@ void Background::handle_gauge(PlayerNum player_num, float progress, bool is_clea
 }
 
 void Background::handle_song_end(PlayerNum player_num, int good, int ok, int bad, int total_notes) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_song_end.valid()) {
         return;
     }
@@ -182,6 +191,7 @@ void Background::handle_song_end(PlayerNum player_num, int good, int ok, int bad
 }
 
 void Background::handle_dan(PlayerNum player_num, const sol::table& state) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_dan.valid()) {
         return;
     }
@@ -193,6 +203,7 @@ void Background::handle_dan(PlayerNum player_num, const sol::table& state) {
 }
 
 void Background::handle_score(PlayerNum player_num, int score) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_score.valid()) {
         return;
     }
@@ -204,6 +215,7 @@ void Background::handle_score(PlayerNum player_num, int score) {
 }
 
 void Background::handle_ending(PlayerNum player_num, const std::string& kind) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_ending.valid()) {
         return;
     }
@@ -215,6 +227,7 @@ void Background::handle_ending(PlayerNum player_num, const std::string& kind) {
 }
 
 void Background::draw_ending(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_draw_ending.valid()) {
         return;
     }
@@ -226,6 +239,7 @@ void Background::draw_ending(PlayerNum player_num) {
 }
 
 void Background::handle_balloon_end(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_balloon_end.valid()) {
         return;
     }
@@ -237,6 +251,7 @@ void Background::handle_balloon_end(PlayerNum player_num) {
 }
 
 void Background::handle_skip(PlayerNum player_num, const sol::table& state) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_skip.valid()) {
         return;
     }
@@ -274,6 +289,7 @@ void Background::draw_fore() {
 }
 
 void Background::draw_gauge(PlayerNum player_num) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_draw_gauge.valid()) {
         return;
     }
@@ -285,6 +301,7 @@ void Background::draw_gauge(PlayerNum player_num) {
 }
 
 void Background::handle_miss_streak(PlayerNum player_num, bool on) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_miss_streak.valid()) {
         return;
     }
@@ -296,6 +313,7 @@ void Background::handle_miss_streak(PlayerNum player_num, bool on) {
 }
 
 void Background::handle_gogo(PlayerNum player_num, bool on) {
+    PlayerSoundScope audio_owner(player_num);
     if (!fn_handle_gogo.valid()) {
         return;
     }

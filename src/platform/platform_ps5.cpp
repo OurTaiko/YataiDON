@@ -1,4 +1,5 @@
 #include "platform_ps5.h"
+#include "platform.h"
 #include "../libs/gfx/sdl_compat.h"
 #include "../libs/gfx.h"
 #include <stdexcept>
@@ -19,14 +20,14 @@ void ps5_report_boot_error(const char* message) {
     sceKernelDebugOutText(0, text);
 }
 
-std::filesystem::path unix_get_executable_dir() {
+std::filesystem::path platform_get_working_directory() {
     // Assets, configuration and databases live together in writable storage.
     const std::filesystem::path root = "/data/YataiDON";
     std::filesystem::create_directories(root);
     return root;
 }
 
-void unix_install_crash_handlers() {
+void platform_install_crash_handlers() {
     // logging.cpp installs the common C++ terminate handler.
 }
 
@@ -69,3 +70,7 @@ int ps5_apply_output_refresh(int refresh_hz) {
 }
 
 int ps5_output_refresh_hz() { return output_refresh; }
+
+void platform_close_window() {
+    close_window();
+}

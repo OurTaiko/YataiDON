@@ -410,6 +410,16 @@ static void init_shaders(Shader& outline_fxaa_shader, int& outline_fxaa_size_loc
     float outline_thickness = 3.0f;
     set_shader_value(outline_fxaa_shader, outline_fxaa_thickness_loc, &outline_thickness, shader_uniform::FLOAT);
 
+    // bgfx uniforms are shared by name, while their values are cached per
+    // shader program. Untinted characters must submit neutral values too,
+    // otherwise a previous character/scene's Go-Go or miss tint remains active.
+    const float tint_color[3] = {0.0f, 0.0f, 0.0f};
+    const float tint_amount = 0.0f;
+    set_shader_value(outline_fxaa_shader, get_shader_location(outline_fxaa_shader, "tintColor"), tint_color,
+                     shader_uniform::VEC3);
+    set_shader_value(outline_fxaa_shader, get_shader_location(outline_fxaa_shader, "tintAmount"), &tint_amount,
+                     shader_uniform::FLOAT);
+
     null_shader = load_shader(nullptr, "shader/null.fs");
     face_shader = load_shader(nullptr, "shader/face.fs");
     cutout_shader = load_shader(nullptr, "shader/cutout.fs");

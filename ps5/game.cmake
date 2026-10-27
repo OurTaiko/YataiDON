@@ -44,7 +44,8 @@ list(FILTER game_sources EXCLUDE REGEX "/src/libs/optional/")
 add_library(yataidon_ps5_game STATIC ${game_sources}
     ${CMAKE_CURRENT_SOURCE_DIR}/native-file-data.c
   ${game_root}/src/platform/platform_ps5.cpp ${game_root}/src/platform/platform_ps5_audio.cpp
-  ${game_root}/src/platform/platform_ps5_video.cpp)
+  ${game_root}/src/platform/platform_ps5_video.cpp
+  ${game_root}/src/platform/platform_desktop.cpp)
 target_include_directories(yataidon_ps5_game PUBLIC
   ${game_root}/src ${CMAKE_BINARY_DIR}/generated
   ${vendor}/rapidjson/include ${vendor}/tomlplusplus/include
