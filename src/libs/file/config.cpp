@@ -359,6 +359,7 @@ Config get_config() {
     config.keys.pause_key = getKeyCodeOrDefault(config_file["keys"]["pause_key"].value_or("space"), "space");
     config.keys.back_key = getKeyCodeOrDefault(config_file["keys"]["back_key"].value_or("escape"), "escape");
     config.keys.restart_key = getKeyCodeOrDefault(config_file["keys"]["restart_key"].value_or("f1"), "f1");
+    config.keys.gamepad_menu_layout = config_file["keys"]["gamepad_menu_layout"].value_or(false);
 
     // Parse keys_1p
     config.keys_1p.left_kat = parseKeyArrayOrDefault(config_file, "keys_1p", "left_kat", {SDL_SCANCODE_D});
@@ -441,6 +442,7 @@ Config get_config() {
     config.video.target_fps = config_file["video"]["target_fps"].value_or(-1);
     config.video.vsync = config_file["video"]["vsync"].value_or(kDefaultVsync);
 #ifdef YATAIDON_PLATFORM_PS5
+    config.keys.gamepad_menu_layout = config_file["keys"]["gamepad_menu_layout"].value_or(true);
     config.video.vsync = true;
     config.video.fullscreen = config.video.borderless = false;
     config.video.target_fps = config.video.target_fps == 60 ? 60 : 120;
@@ -509,7 +511,8 @@ void save_config(const Config& config) {
                                             {"borderless_key", getKeyStringSafe(config.keys.borderless_key)},
                                             {"pause_key", getKeyStringSafe(config.keys.pause_key)},
                                             {"back_key", getKeyStringSafe(config.keys.back_key)},
-                                            {"restart_key", getKeyStringSafe(config.keys.restart_key)}});
+                                            {"restart_key", getKeyStringSafe(config.keys.restart_key)},
+                                            {"gamepad_menu_layout", config.keys.gamepad_menu_layout}});
 
     // Keys 1P
     toml::array left_kat_1p, left_don_1p, right_don_1p, right_kat_1p;

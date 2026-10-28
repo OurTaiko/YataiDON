@@ -1,38 +1,13 @@
 #include "input.h"
 #ifdef YATAIDON_PLATFORM_PS5
-#include "../../platform/ps5_controls.h"
 #include "../../../ps5/native-ime.h"
-static bool ps5_menu_input(PlayerNum player) {
-    return !ps5_controls::gameplay(global_data.current_screen) &&
-           (player == PlayerNum::ALL || player == PlayerNum::P1 || player == PlayerNum::P2);
-}
-static bool ps5_menu_press(ps5_controls::MenuAction action, PlayerNum player, float* strength) {
-    const int first_slot = player == PlayerNum::P2 ? 1 : 0;
-    const int end_slot = player == PlayerNum::ALL ? 4 : first_slot + 1;
-    for (int slot = first_slot; slot < end_slot; ++slot) {
-        for (int button = 1; button <= 18; ++button) {
-            if (ps5_controls::menu_action(button) != action) continue;
-            if (check_key_pressed(ps5_controls::player_button_key(slot, button), strength)) {
-                // Consume the shared alias too, so a join press cannot also
-                // confirm another menu action in the same frame.
-                check_key_pressed(10000 + button);
-                return true;
-            }
-        }
-    }
-    // Unassigned menu actions also accept injected/unmapped controller input.
-    // Explicit player checks must retain identity, especially for joining P2.
-    if (player == PlayerNum::ALL) {
-        for (int button = 1; button <= 18; ++button)
-            if (ps5_controls::menu_action(button) == action && check_key_pressed(10000 + button, strength)) return true;
-    }
-    return false;
-}
 #endif
 
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <span>
+#include <string_view>
 #include <cstdint>
 #include <cstdio>
 #include <deque>
@@ -163,15 +138,106 @@ void set_touch_drum_enabled(bool enabled) {
 
 static std::array<bool, SDL_SCANCODE_COUNT> previous_key_states{};
 static std::array<std::array<bool, 19>, 4> previous_gamepad_states{};
-#ifdef YATAIDON_PLATFORM_PS5
-static ps5_controls::ControllerSlots ps5_controller_slots;
-#endif
 
 // Gamepad/joystick buttons and axes are folded into the key space at these
 // offsets (config stores the bare button number).
 static constexpr int GAMEPAD_VKEY_BASE = 10000;
 static constexpr int AXIS_VKEY_BASE = 20000;
 static std::atomic<int> last_gamepad_vkey{0};
+// Each gamepad press is also reported once per pad slot, so 2P can tell the pads apart.
+static constexpr int PAD_SLOT_VKEY_BASE = 50000;
+static constexpr int pad_slot_key(int slot, int button) {
+    return PAD_SLOT_VKEY_BASE + slot * 100 + button;
+}
+
+// Pads keep the slot they were first seen in, so P1/P2 don't swap when another reconnects.
+class ControllerSlots {
+    std::array<int, 4> ids{-1, -1, -1, -1};
+
+public:
+    void update(std::span<const int> connected) {
+        for (auto& id : ids) {
+            if (std::ranges::find(connected, id) == connected.end()) {
+                id = -1;
+            }
+        }
+        for (int id : connected) {
+            if (slot(id) >= 0) {
+                continue;
+            }
+            auto empty = std::ranges::find(ids, -1);
+            if (empty != ids.end()) {
+                *empty = id;
+            }
+        }
+    }
+    int slot(int id) const {
+        auto found = id < 0 ? ids.end() : std::ranges::find(ids, id);
+        return found == ids.end() ? -1 : static_cast<int>(found - ids.begin());
+    }
+    int device(int slot) const { return ids[slot]; }
+    int count() const { return static_cast<int>(std::ranges::count_if(ids, [](int id) { return id >= 0; })); }
+};
+static ControllerSlots controller_slots;     // input thread only
+static std::atomic<int> slotted_gamepads{0}; // controller_slots.count(), for the game thread
+
+static bool is_gameplay_screen(std::string_view screen) {
+    return screen == "GAME" || screen == "GAME_2P" || screen == "GAME_DAN" || screen == "GAME_PRACTICE" ||
+           screen == "AI_GAME" || screen == "INPUT_TEST" || screen == "INPUT_CALI";
+}
+
+// With two pads in 2P, pad 1 plays P1 and pad 2 plays P2 even when their bindings overlap.
+// One pad keeps the shared behaviour, so a single controller can still be split between players.
+static bool separate_players() {
+    return global_data.current_screen == "GAME_2P" && slotted_gamepads.load(std::memory_order_relaxed) >= 2;
+}
+
+// Optional fixed gamepad layout for menus (keys.gamepad_menu_layout): D-pad/shoulders move,
+// South confirms, East/touchpad go back, Start restarts. It replaces the drum bindings in menus,
+// where pads whose drum layout uses the face buttons would otherwise confirm and go back at once.
+enum class MenuAction { None, Left, Right, Confirm };
+static constexpr int PAD_EAST = 6, PAD_START = 15, PAD_TOUCHPAD = 18;
+static constexpr MenuAction menu_action(int button) {
+    switch (button) {
+    case 1: case 4: case 9: return MenuAction::Left;
+    case 2: case 3: case 11: return MenuAction::Right;
+    case 7: return MenuAction::Confirm;
+    default: return MenuAction::None;
+    }
+}
+
+static bool uses_menu_layout() {
+    return global_data.config && global_data.config->keys.gamepad_menu_layout &&
+           !is_gameplay_screen(global_data.current_screen);
+}
+
+static bool menu_layout_pressed(MenuAction action, PlayerNum player, float* strength) {
+    if (player != PlayerNum::ALL && player != PlayerNum::P1 && player != PlayerNum::P2) {
+        return false;
+    }
+    const int first_slot = player == PlayerNum::P2 ? 1 : 0;
+    const int end_slot = player == PlayerNum::ALL ? 4 : first_slot + 1;
+    for (int slot = first_slot; slot < end_slot; ++slot) {
+        for (int button = 1; button <= 18; ++button) {
+            if (menu_action(button) == action && check_key_pressed(pad_slot_key(slot, button), strength)) {
+                // Consume the shared alias too, so a join press cannot also
+                // confirm another menu action in the same frame.
+                check_key_pressed(GAMEPAD_VKEY_BASE + button);
+                return true;
+            }
+        }
+    }
+    // Unassigned menu actions also accept injected/unmapped controller input.
+    // Explicit player checks must retain identity, especially for joining P2.
+    if (player == PlayerNum::ALL) {
+        for (int button = 1; button <= 18; ++button) {
+            if (menu_action(button) == action && check_key_pressed(GAMEPAD_VKEY_BASE + button, strength)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 bool is_input_key_pressed(const std::vector<int>& keys, const std::vector<int>& gamepad_buttons, float* strength) {
 
@@ -192,16 +258,17 @@ bool is_input_key_pressed(const std::vector<int>& keys, const std::vector<int>& 
 
 static bool player_input_pressed(const std::vector<int>& keys, const std::vector<int>& buttons,
                                  PlayerNum player, float* strength) {
-#ifdef YATAIDON_PLATFORM_PS5
-    if (ps5_controls::separate_players(global_data.current_screen)) {
-        for (int key : keys)
-            if (check_key_pressed(key, strength)) return true;
+    if (separate_players()) {
+        for (int key : keys) {
+            if (check_key_pressed(key, strength)) {
+                return true;
+            }
+        }
         const int slot = player == PlayerNum::P2 ? 1 : 0;
         return std::ranges::any_of(buttons, [slot, strength](int button) {
-            return check_key_pressed(ps5_controls::player_button_key(slot, button), strength);
+            return check_key_pressed(pad_slot_key(slot, button), strength);
         });
     }
-#endif
     return is_input_key_pressed(keys, buttons, strength);
 }
 
@@ -215,12 +282,12 @@ static bool keys_held(const std::vector<int>& keys, const std::vector<int>& pad,
         if (b < 1 || b > 18) {
             continue;
         }
-#ifdef YATAIDON_PLATFORM_PS5
-        if (ps5_controls::separate_players(global_data.current_screen)) {
-            if (previous_gamepad_states[player == PlayerNum::P2 ? 1 : 0][b]) return true;
+        if (separate_players()) {
+            if (previous_gamepad_states[player == PlayerNum::P2 ? 1 : 0][b]) {
+                return true;
+            }
             continue;
         }
-#endif
         for (auto& g : previous_gamepad_states) {
             if (g[b]) {
                 return true;
@@ -241,12 +308,12 @@ bool is_kat_held(bool left, PlayerNum player_num) {
 }
 
 bool is_l_don_pressed(PlayerNum player_num, float* strength) {
-#ifdef YATAIDON_PLATFORM_PS5
-    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+    if (player_num == PlayerNum::ALL && separate_players()) {
         return is_l_don_pressed(PlayerNum::P1, strength) || is_l_don_pressed(PlayerNum::P2, strength);
-    if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, player_num, strength);
-#endif
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Confirm, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
         return player_input_pressed(global_data.config->keys_1p.left_don, global_data.config->gamepad_1p.left_don,
                                     PlayerNum::P1, strength) ||
@@ -271,12 +338,12 @@ bool is_l_don_pressed(PlayerNum player_num, float* strength) {
 }
 
 bool is_r_don_pressed(PlayerNum player_num, float* strength) {
-#ifdef YATAIDON_PLATFORM_PS5
-    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+    if (player_num == PlayerNum::ALL && separate_players()) {
         return is_r_don_pressed(PlayerNum::P1, strength) || is_r_don_pressed(PlayerNum::P2, strength);
-    if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Confirm, player_num, strength);
-#endif
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Confirm, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
         return player_input_pressed(global_data.config->keys_1p.right_don, global_data.config->gamepad_1p.right_don,
                                     PlayerNum::P1, strength) ||
@@ -313,12 +380,12 @@ bool menu_confirm_pressed(PlayerNum p) {
 }
 
 bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
-#ifdef YATAIDON_PLATFORM_PS5
-    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+    if (player_num == PlayerNum::ALL && separate_players()) {
         return is_l_kat_pressed(PlayerNum::P1, strength) || is_l_kat_pressed(PlayerNum::P2, strength);
-    if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Left, player_num, strength);
-#endif
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Left, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
         return player_input_pressed(global_data.config->keys_1p.left_kat, global_data.config->gamepad_1p.left_kat,
                                     PlayerNum::P1, strength) ||
@@ -343,12 +410,12 @@ bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
 }
 
 bool is_r_kat_pressed(PlayerNum player_num, float* strength) {
-#ifdef YATAIDON_PLATFORM_PS5
-    if (player_num == PlayerNum::ALL && ps5_controls::separate_players(global_data.current_screen))
+    if (player_num == PlayerNum::ALL && separate_players()) {
         return is_r_kat_pressed(PlayerNum::P1, strength) || is_r_kat_pressed(PlayerNum::P2, strength);
-    if (!ps5_controls::gameplay(global_data.current_screen))
-        return ps5_menu_input(player_num) && ps5_menu_press(ps5_controls::MenuAction::Right, player_num, strength);
-#endif
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Right, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
         return player_input_pressed(global_data.config->keys_1p.right_kat, global_data.config->gamepad_1p.right_kat,
                                     PlayerNum::P1, strength) ||
@@ -597,23 +664,22 @@ void poll_keyboard_once() {
     };
     constexpr float TRIGGER_THRESHOLD = 0.1f;
 
-#ifdef YATAIDON_PLATFORM_PS5
     std::vector<int> connected;
-    for (const auto& [id, gp] : sdl_gamepads) connected.push_back(id);
-    const auto previous_slots = ps5_controller_slots;
-    ps5_controller_slots.update(connected);
-    for (int slot = 0; slot < 4; ++slot)
-        if (previous_slots.device(slot) != ps5_controller_slots.device(slot))
+    for (const auto& [id, gp] : sdl_gamepads) {
+        connected.push_back(static_cast<int>(id));
+    }
+    const ControllerSlots previous_slots = controller_slots;
+    controller_slots.update(connected);
+    slotted_gamepads.store(controller_slots.count(), std::memory_order_relaxed);
+    for (int slot = 0; slot < 4; ++slot) {
+        if (previous_slots.device(slot) != controller_slots.device(slot)) {
             previous_gamepad_states[slot].fill(false);
-#endif
-    int gamepad = 0;
+        }
+    }
     for (auto& [id, gp] : sdl_gamepads) {
-#ifdef YATAIDON_PLATFORM_PS5
-        gamepad = ps5_controller_slots.slot(id);
-        if (gamepad < 0) continue;
-#endif
-        if (gamepad >= 4) {
-            break;
+        const int gamepad = controller_slots.slot(static_cast<int>(id));
+        if (gamepad < 0) {
+            continue; // more than four pads
         }
         std::array<bool, 19> state{};
         for (const auto& [sdl_btn, btn] : GAMEPAD_BUTTONS) {
@@ -626,19 +692,14 @@ void poll_keyboard_once() {
             bool previous_state = previous_gamepad_states[gamepad][btn];
             if (state[btn] && !previous_state) {
                 local_pressed.push_back(key);
-#ifdef YATAIDON_PLATFORM_PS5
-                local_pressed.push_back(ps5_controls::player_button_key(gamepad, btn));
-#endif
+                local_pressed.push_back(pad_slot_key(gamepad, btn));
             }
             if (!state[btn] && previous_state) {
                 local_released.push_back(key);
-#ifdef YATAIDON_PLATFORM_PS5
-                local_released.push_back(ps5_controls::player_button_key(gamepad, btn));
-#endif
+                local_released.push_back(pad_slot_key(gamepad, btn));
             }
             previous_gamepad_states[gamepad][btn] = state[btn];
         }
-        gamepad++;
     }
 
     constexpr float JOYSTICK_AXIS_THRESHOLD = 0.5f;
@@ -687,14 +748,12 @@ void poll_keyboard_once() {
         }
     }
 
-#ifdef YATAIDON_PLATFORM_PS5
-    // SDL's startup-added event can expose an already-open controller in more
-    // than one raylib slot. One physical edge must not toggle setup twice.
+    // SDL's startup-added event can expose an already-open controller more
+    // than once. One physical edge must not register twice.
     std::ranges::sort(local_pressed);
     local_pressed.erase(std::unique(local_pressed.begin(), local_pressed.end()), local_pressed.end());
     std::ranges::sort(local_released);
     local_released.erase(std::unique(local_released.begin(), local_released.end()), local_released.end());
-#endif
 
     // Remember the newest controller press separately from pressed_keys so
     // the keybind screen can read it: the pressed_keys entry is consumed by
@@ -990,18 +1049,19 @@ void input_polling_thread() {
 
 bool check_key_pressed(int key, float* strength) {
     std::scoped_lock lock(input_mutex);
-#ifdef YATAIDON_PLATFORM_PS5
-    if (global_data.config) {
-        if (key != 0 && key == global_data.config->keys.restart_key &&
-            ps5_controls::gameplay(global_data.current_screen) && pressed_keys.contains(10015)) {
-            key = 10015;
-        } else if (key != 0 && key == global_data.config->keys.back_key) {
-            if (pressed_keys.contains(10018)) key = 10018;
-            else if (!ps5_controls::gameplay(global_data.current_screen) && pressed_keys.contains(10006))
-                key = 10006;
+    if (key != 0 && global_data.config && global_data.config->keys.gamepad_menu_layout) {
+        const bool gameplay = is_gameplay_screen(global_data.current_screen);
+        auto pad = [](int button) { return GAMEPAD_VKEY_BASE + button; };
+        if (key == global_data.config->keys.restart_key && gameplay && pressed_keys.contains(pad(PAD_START))) {
+            key = pad(PAD_START);
+        } else if (key == global_data.config->keys.back_key) {
+            if (pressed_keys.contains(pad(PAD_TOUCHPAD))) {
+                key = pad(PAD_TOUCHPAD);
+            } else if (!gameplay && pressed_keys.contains(pad(PAD_EAST))) {
+                key = pad(PAD_EAST);
+            }
         }
     }
-#endif
     auto it = pressed_keys.find(key);
     if (it != pressed_keys.end()) {
         if (strength) {
@@ -1041,10 +1101,11 @@ void shutdown_sdl_joysticks() {
         SDL_CloseGamepad(gp);
     }
     sdl_gamepads.clear();
-#ifdef YATAIDON_PLATFORM_PS5
-    ps5_controller_slots = {};
-    for (auto& state : previous_gamepad_states) state.fill(false);
-#endif
+    controller_slots = {};
+    slotted_gamepads.store(0, std::memory_order_relaxed);
+    for (auto& state : previous_gamepad_states) {
+        state.fill(false);
+    }
     sdl_prev_button.clear();
     sdl_prev_axis.clear();
     SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
