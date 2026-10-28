@@ -205,7 +205,7 @@ jobs:
 
       - name: Package unsigned IPA
         run: |
-          APP_PATH="$GITHUB_WORKSPACE/build-ios-device/bin/Release/YataiDON.app"
+          APP_PATH="$GITHUB_WORKSPACE/build-ios-device/build/Release-iphoneos/YataiDON.app"
           test -f "$APP_PATH/Info.plist"
           test -x "$APP_PATH/YataiDON"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$APP_PATH/Info.plist")" = "iPhoneOS"
