@@ -308,10 +308,6 @@ static const RtAudioBackend* find_rtaudio_backend(int device_type) {
 #endif
 
 std::vector<std::string> enumerate_audio_devices(int device_type) {
-#ifdef YATAIDON_PLATFORM_PS5
-    (void)device_type;
-    return {"PS5 AudioOut"};
-#else
     std::vector<std::string> names;
 
 #if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
@@ -369,7 +365,7 @@ std::vector<std::string> enumerate_audio_devices(int device_type) {
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
     return names;
-#endif
+
 }
 
 AudioEngine::~AudioEngine() {
@@ -805,16 +801,6 @@ void AudioEngine::set_suspended(bool suspended) {
 }
 
 bool AudioEngine::init_sdl3_device() {
-#ifdef YATAIDON_PLATFORM_PS5
-    target_sample_rate = 48000;
-    buffer_size = std::clamp<unsigned long>(((buffer_size + 255) / 256) * 256, 256, 2048);
-    ps5_audio = ps5_open_audio([](float* output, unsigned int frames, void* context) {
-        mix(output, frames, static_cast<AudioEngine*>(context));
-    }, this, static_cast<unsigned int>(buffer_size));
-    is_ready = ps5_audio != nullptr;
-    if (is_ready) spdlog::info("PS5 AudioOut: 48000 Hz, stereo, {} frames", buffer_size);
-    return is_ready;
-#else
 #ifdef YATAIDON_PLATFORM_IOS
     ios_request_audio_buffer();
 #endif
@@ -891,7 +877,6 @@ bool AudioEngine::init_sdl3_device() {
                  static_cast<int>(target_sample_rate));
     spdlog::info("    > Buffer size:   {} frames (device-reported)", actual_frames);
     return true;
-#endif
 }
 
 bool AudioEngine::init_audio_device(const fs::path& sounds_path, const AudioConfig& audio_config,
@@ -912,6 +897,13 @@ bool AudioEngine::init_audio_device(const fs::path& sounds_path, const AudioConf
     this->is_ready = false;
     this->master_volume = 1.0f;
     try {
+        platform_audio = platform_open_audio(
+            [](float* out, unsigned int frames, void* context) { mix(out, frames, static_cast<AudioEngine*>(context)); },
+            this, target_sample_rate, buffer_size);
+        if (platform_audio) {
+            is_ready = true;
+            return true;
+        }
 #if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
         if (const auto* backend = find_rtaudio_backend(audio_config.device_type)) {
             return init_rtaudio_device(backend->api, backend->name);
@@ -941,10 +933,8 @@ void AudioEngine::close_audio_device() {
         return;
     }
     try {
-#ifdef YATAIDON_PLATFORM_PS5
-        ps5_close_audio(ps5_audio);
-        ps5_audio = nullptr;
-#endif
+        platform_close_audio(platform_audio);
+        platform_audio = nullptr;
         unload_all_sounds();
         unload_all_music();
 

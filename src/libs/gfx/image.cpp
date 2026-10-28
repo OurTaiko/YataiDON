@@ -10,9 +10,7 @@
 #include <vector>
 
 #include "../gfx.h"
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../../platform/platform_ps5.h"
-#endif
+#include "../../platform/platform.h"
 
 // Static copies: the raylib backend links its own non-static stb_image.
 #define STB_IMAGE_STATIC
@@ -40,15 +38,9 @@ const char* text_format(const char* fmt, ...) {
 
 std::vector<unsigned char> load_file_bytes(const char* path) {
     std::vector<unsigned char> data;
-#ifdef YATAIDON_PLATFORM_PS5
-    int length = 0;
-    unsigned char* bytes = ps5_load_file_data(path, &length);
-    if (bytes) {
-        data.assign(bytes, bytes + length);
-        std::free(bytes);
+    if (platform_read_file(path, data)) {
+        return data;
     }
-    return data;
-#else
     FILE* f = std::fopen(path, "rb");
     if (!f) {
         spdlog::warn("FILEIO: [{}] Failed to open file", path);
@@ -60,7 +52,6 @@ std::vector<unsigned char> load_file_bytes(const char* path) {
     data.resize(std::fread(data.data(), 1, data.size(), f));
     std::fclose(f);
     return data;
-#endif
 }
 
 int get_pixel_data_size(int width, int height, int format) {

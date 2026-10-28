@@ -12,6 +12,7 @@
 #include "file/script.h"
 #include "gfx/text.h"
 #include "gfx/texture.h"
+#include "../platform/platform.h"
 
 GlobalData global_data;
 
@@ -24,7 +25,11 @@ void queue_window_resize(int width, int height) {
 }
 
 bool apply_queued_window_resize() {
-#if !defined(YATAIDON_PLATFORM_IOS) && !defined(YATAIDON_PLATFORM_PS5)
+#if !defined(YATAIDON_PLATFORM_IOS)
+    if (!(platform_window_flags(0) & window_flag::RESIZABLE)) {
+        queued_window_resize.reset(); // fixed display (console)
+        return false;
+    }
     if (!queued_window_resize) {
         return false;
     }

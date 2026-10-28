@@ -130,6 +130,7 @@ inline bool SDL_IsGamepad(SDL_JoystickID id) {
 }
 using SDL_Gamepad = SDL_GameController;
 using SDL_GamepadButton = SDL_GameControllerButton;
+#define SDL_ScreenKeyboardShown SDL_IsScreenKeyboardShown
 #define SDL_GAMEPAD_BUTTON_SOUTH SDL_CONTROLLER_BUTTON_A
 #define SDL_GAMEPAD_BUTTON_EAST SDL_CONTROLLER_BUTTON_B
 #define SDL_GAMEPAD_BUTTON_WEST SDL_CONTROLLER_BUTTON_X

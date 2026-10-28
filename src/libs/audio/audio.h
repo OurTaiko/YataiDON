@@ -3,9 +3,7 @@
 #include "../file/config.h"
 #include "../gfx/sdl_compat.h"
 #include "../video/av.h"
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../../platform/platform_ps5.h"
-#endif
+#include "../../platform/platform.h"
 #if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
 #include <RtAudio.h>
 #endif
@@ -210,9 +208,7 @@ private:
     std::atomic<float> master_volume;
 
     SDL_AudioStream* sdl_stream = nullptr;
-#ifdef YATAIDON_PLATFORM_PS5
-    PS5AudioDevice* ps5_audio = nullptr;
-#endif
+    PlatformAudioDevice* platform_audio = nullptr; // platform's own output, if it has one
     bool sdl_audio_subsystem_initialized = false;
     std::vector<float> sdl_scratch_buffer;
 

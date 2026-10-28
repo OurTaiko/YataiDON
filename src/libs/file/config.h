@@ -8,6 +8,12 @@
 
 namespace fs = std::filesystem;
 
+struct Config;
+// Platform overrides applied after config.toml is read, and extra keys written when saving
+// (implemented per platform; no-ops on most).
+void platform_load_config(Config& config, const toml::table& file);
+void platform_save_config(const Config& config, toml::table& out);
+
 struct GeneralConfig {
     bool fps_counter = false;
     int audio_offset = 0;

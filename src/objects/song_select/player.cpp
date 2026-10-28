@@ -366,11 +366,11 @@ static bool any_don_key_down(PlayerNum player_num) {
 }
 
 std::optional<std::string> SongSelectPlayer::handle_input_search() {
-#ifdef YATAIDON_PLATFORM_PS5
-    // The native dialog returns a completed query, never the opening drum key.
-    // Do not discard a fast confirm/cancel result during the keyboard grace period.
-    search_guard = false;
-#endif
+    // The guard is for physical keyboards. An on-screen keyboard (a console's native dialog)
+    // returns a completed query, never the opening drum key: don't discard a fast result.
+    if (SDL_HasScreenKeyboardSupport()) {
+        search_guard = false;
+    }
     if (search_guard) {
         // The don press is seen by the input thread a few ms before raylib's own key state
         // and the typed character catch up, so the opening keystroke (F/J) would land in the

@@ -32,9 +32,7 @@ private:
     bool audio_started = false;
     std::string audio_s;
     bool is_static = false;
-#ifdef YATAIDON_PLATFORM_PS5
-    fs::path source_path;
-#endif
+    fs::path source_path; // reopened by a platform hardware decoder
 
     float fps = 0.f;
     double duration = 0.0;

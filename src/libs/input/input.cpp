@@ -1,7 +1,5 @@
 #include "input.h"
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../../../ps5/native-ime.h"
-#endif
+#include "../../platform/platform.h"
 
 #include <algorithm>
 #include <array>
@@ -144,6 +142,8 @@ static std::array<std::array<bool, 19>, 4> previous_gamepad_states{};
 static constexpr int GAMEPAD_VKEY_BASE = 10000;
 static constexpr int AXIS_VKEY_BASE = 20000;
 static std::atomic<int> last_gamepad_vkey{0};
+// set_keyboard_visible started SDL's on-screen keyboard (only where the platform has one)
+static std::atomic<bool> screen_keyboard_started{false};
 // Each gamepad press is also reported once per pad slot, so 2P can tell the pads apart.
 static constexpr int PAD_SLOT_VKEY_BASE = 50000;
 static constexpr int pad_slot_key(int slot, int button) {
@@ -609,9 +609,12 @@ void poll_touch_once() {
 // Scan all keyboard keys once and push press/release events.
 // Used by the polling thread on desktop and called directly per-frame on web.
 void poll_keyboard_once() {
-#ifdef YATAIDON_PLATFORM_PS5
-    if (SDL_Window* window = main_window(); window && SDL_IsScreenKeyboardShown(window)) return;
-#endif
+    // A modal on-screen keyboard (a console dialog) owns the keys while it is up.
+    if (screen_keyboard_started.load(std::memory_order_relaxed)) {
+        if (SDL_Window* window = main_window(); window && SDL_ScreenKeyboardShown(window)) {
+            return;
+        }
+    }
     if (is_input_locked()) {
         return;
     }
@@ -1127,13 +1130,12 @@ bool is_text_input_key(int key) {
 }
 
 void set_keyboard_visible(bool visible, const std::string& initial_text) {
-#ifdef YATAIDON_PLATFORM_PS5
-    SDL_SetHint("YATAIDON_PS5_IME_TEXT", initial_text.c_str());
-#else
-    (void)initial_text;
-#endif
+    // Read by platforms whose on-screen keyboard is a native dialog that edits the whole text.
+    SDL_SetHint("YATAIDON_TEXT_INPUT_INITIAL", initial_text.c_str());
     keyboard_editing = visible;
-#if defined(PLATFORM_ANDROID) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
+    if (!SDL_HasScreenKeyboardSupport()) {
+        return;
+    }
     SDL_Window* win = main_window();
     if (!win) {
         return;
@@ -1145,9 +1147,7 @@ void set_keyboard_visible(bool visible, const std::string& initial_text) {
         SDL_StopTextInput(win);
         SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
     }
-#else
-    (void)visible;
-#endif
+    screen_keyboard_started.store(visible, std::memory_order_relaxed);
 }
 
 // Unified keyboard text-field editing. See the declaration in input.h.
@@ -1177,9 +1177,9 @@ void sync_text_input() {
 
 TextEditAction poll_text_edit(std::string& text, const std::function<bool(int)>& accept) {
     text_input_wanted = true;
-#ifdef YATAIDON_PLATFORM_PS5
-    if (yataidon_ime_take_replacement()) text.clear();
-#endif
+    if (platform_take_text_replacement()) {
+        text.clear();
+    }
     // Ctrl+V pastes the clipboard (first line only, UTF-8).
     if ((key_down(SDL_SCANCODE_LCTRL) || key_down(SDL_SCANCODE_RCTRL)) && key_pressed(SDL_SCANCODE_V)) {
         char* clip = SDL_GetClipboardText();

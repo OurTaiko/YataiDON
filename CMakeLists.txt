@@ -139,6 +139,7 @@ elseif(EMSCRIPTEN)
 elseif(UNIX)
     file(GLOB PLATFORM_SOURCES src/platform/*_linux.cpp src/platform/platform_posix.cpp src/platform/platform_desktop.cpp)
 endif()
+list(APPEND PLATFORM_SOURCES src/platform/platform_defaults.cpp)
 
 if(SUPPORT_FUMEN)
   file(GLOB Gen4CppFiles src/libs/optional/*.cpp)

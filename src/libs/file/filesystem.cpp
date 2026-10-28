@@ -13,9 +13,7 @@
 
 #include "../../platform/platform.h"
 #include "../asset_cache.h"
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../../platform/platform_ps5.h"
-#endif
+#include "../gfx.h"
 #include "../../platform/platform_windows.h"
 
 void set_working_directory_to_executable() {
@@ -431,31 +429,13 @@ rapidjson::Document read_json_file(const fs::path& file_path) {
             return copy;
         }
     }
-#ifdef YATAIDON_PLATFORM_PS5
-    int length = 0;
-    unsigned char* bytes = ps5_load_file_data(file_path.string().c_str(), &length);
-    if (!bytes) throw std::runtime_error("Failed to open file: " + file_path.string());
+    const std::vector<unsigned char> bytes = load_file_bytes(file_path.string().c_str());
+    if (bytes.empty()) {
+        throw std::runtime_error((fs::exists(file_path) ? "Failed to open file: " : "File not found: ") +
+                                 file_path.string());
+    }
     rapidjson::Document doc;
-    try {
-        doc.Parse(reinterpret_cast<const char*>(bytes), size_t(length));
-    } catch (...) {
-        std::free(bytes);
-        throw;
-    }
-    std::free(bytes);
-#else
-    if (!fs::exists(file_path)) {
-        throw std::runtime_error("File not found: " + file_path.string());
-    }
-    std::ifstream ifs(file_path);
-
-    if (!ifs) {
-        throw std::runtime_error("Failed to open file: " + file_path.string());
-    }
-    rapidjson::IStreamWrapper isw(ifs);
-    rapidjson::Document doc;
-    doc.ParseStream(isw);
-#endif
+    doc.Parse(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 
     if (doc.HasParseError()) {
         throw std::runtime_error("Failed to parse " + file_path.string() + ": " + std::to_string(doc.GetParseError()));

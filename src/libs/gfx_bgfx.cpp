@@ -404,7 +404,7 @@ namespace {
     }
 
     void native_handles(void*& nwh, void*& ndt, bgfx::NativeWindowHandleType::Enum& type) {
-#ifdef YATAIDON_PLATFORM_PS5
+#ifdef YATAIDON_USE_SDL2 // no window properties: the platform's renderer bridge takes the SDL window
         nwh = window;
         ndt = nullptr;
         type = bgfx::NativeWindowHandleType::Default;
@@ -580,9 +580,6 @@ void init_window(int width, int height, const char* title) {
     init.swapChain.width = (uint32_t)w;
     init.swapChain.height = (uint32_t)h;
     reset_flags = (window_flags & window_flag::VSYNC) ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
-#ifdef YATAIDON_PLATFORM_PS5
-    reset_flags |= BGFX_RESET_VSYNC;
-#endif
     init.reset = reset_flags;
     init.callback = &callback;
     parse_shot_env();

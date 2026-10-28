@@ -76,19 +76,6 @@ public:
     void draw() override;
 };
 
-#ifdef YATAIDON_PLATFORM_PS5
-class RefreshOptionBox : public BaseOptionBox {
-    int value;
-    std::unique_ptr<OutlinedText> labels[2];
-public:
-    RefreshOptionBox(const std::string& name, const std::string& description, const std::string& path);
-    void confirm() override;
-    void update(double) override { if (!is_highlighted) value = config_ref.get_int(); }
-    void move_left() override { value = 60; }
-    void move_right() override { value = 120; }
-    void draw() override;
-};
-#endif
 
 class StrOptionBox : public BaseOptionBox {
     std::string value;

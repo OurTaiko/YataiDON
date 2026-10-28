@@ -1,4 +1,5 @@
 #include "chara_3d.h"
+#include "../../platform/platform.h"
 
 #include <algorithm>
 #include <cmath>
@@ -912,14 +913,8 @@ void Chara3D::draw_3d(float x, float y) {
     }
 }
 
-// PS5 uses 100% of the active render output's pixel density. The cropped target
-// saves unused space without reducing resolution; rw/rh come from GetRenderWidth/Height.
-// Other platforms supersample at 2x before the FXAA pass.
-#ifdef YATAIDON_PLATFORM_PS5
-static constexpr float SUPERSAMPLE = 1.0f;
-#else
-static constexpr float SUPERSAMPLE = 2.0f;
-#endif
+// Supersampling before the FXAA pass; rw/rh come from GetRenderWidth/Height.
+static const float SUPERSAMPLE = platform_supersample();
 
 // Screen rectangle (render pixels) of the posed model: the CPU-skinned vertices (animVertices,
 // see UpdateModelAnimation) through the same transform draw_3d uses, then the orthographic

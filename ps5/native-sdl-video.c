@@ -27,7 +27,7 @@ static SDL_bool keyboard_shown(_THIS, SDL_Window* window) {
 }
 static void show_keyboard(_THIS, SDL_Window* window) {
     (void)_this; (void)window;
-    if (yataidon_ime_open(SDL_GetHint("YATAIDON_PS5_IME_TEXT")) != 0) SDL_SendKeyboardKeyAutoRelease(SDL_SCANCODE_ESCAPE);
+    if (yataidon_ime_open(SDL_GetHint("YATAIDON_TEXT_INPUT_INITIAL")) != 0) SDL_SendKeyboardKeyAutoRelease(SDL_SCANCODE_ESCAPE);
 }
 static void hide_keyboard(_THIS, SDL_Window* window) {
     (void)_this; (void)window; yataidon_ime_close();

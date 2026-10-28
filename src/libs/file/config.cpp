@@ -5,9 +5,6 @@
 #include <string_view>
 
 #include "../gfx.h"
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../../platform/ps5_controls.h"
-#endif
 #include "../gfx/sdl_compat.h"
 #include "../global_data.h"
 
@@ -382,16 +379,6 @@ Config get_config() {
     config.gamepad_1p.left_don = parseIntArrayOrDefault(gamepad_1p_node, "left_don", {16});
     config.gamepad_1p.right_don = parseIntArrayOrDefault(gamepad_1p_node, "right_don", {17});
     config.gamepad_1p.right_kat = parseIntArrayOrDefault(gamepad_1p_node, "right_kat", {12});
-#ifdef YATAIDON_PLATFORM_PS5
-    // Apply the requested DualSense layout once; retain later rebindings.
-    if (config_file["ps5"]["controller_layout_version"].value_or(0) < 2) {
-        config.gamepad_1p.left_kat.assign(ps5_controls::left_ka.begin(), ps5_controls::left_ka.end());
-        config.gamepad_1p.left_don.assign(ps5_controls::left_don.begin(), ps5_controls::left_don.end());
-        config.gamepad_1p.right_kat.assign(ps5_controls::right_ka.begin(), ps5_controls::right_ka.end());
-        config.gamepad_1p.right_don.assign(ps5_controls::right_don.begin(), ps5_controls::right_don.end());
-        spdlog::info("Applied requested DualSense drum layout v2");
-    }
-#endif
 
     // Parse gamepad_2p
     const toml::table* gamepad_2p_node = config_file["gamepad_2p"].as_table();
@@ -399,13 +386,6 @@ Config get_config() {
     config.gamepad_2p.left_don = parseIntArrayOrDefault(gamepad_2p_node, "left_don", {});
     config.gamepad_2p.right_don = parseIntArrayOrDefault(gamepad_2p_node, "right_don", {});
     config.gamepad_2p.right_kat = parseIntArrayOrDefault(gamepad_2p_node, "right_kat", {});
-#ifdef YATAIDON_PLATFORM_PS5
-    // Upgrade the previously empty P2 defaults once, preserving custom layouts.
-    if (config_file["ps5"]["p2_controller_layout_version"].value_or(0) < 1 &&
-        ps5_controls::apply_default_layout_if_empty(config.gamepad_2p)) {
-        spdlog::info("Applied DualSense P2 drum layout v1");
-    }
-#endif
 
     const toml::table* midi_node = config_file["midi"].as_table();
     config.midi.device = midi_node ? (*midi_node)["device"].value_or("") : "";
@@ -441,12 +421,7 @@ Config get_config() {
     config.video.borderless = config_file["video"]["borderless"].value_or(false);
     config.video.target_fps = config_file["video"]["target_fps"].value_or(-1);
     config.video.vsync = config_file["video"]["vsync"].value_or(kDefaultVsync);
-#ifdef YATAIDON_PLATFORM_PS5
-    config.keys.gamepad_menu_layout = config_file["keys"]["gamepad_menu_layout"].value_or(true);
-    config.video.vsync = true;
-    config.video.fullscreen = config.video.borderless = false;
-    config.video.target_fps = config.video.target_fps == 60 ? 60 : 120;
-#endif
+    platform_load_config(config, config_file);
 
     return config;
 }
@@ -629,9 +604,7 @@ void save_config(const Config& config) {
                                              {"target_fps", config.video.target_fps},
                                              {"vsync", config.video.vsync}});
 
-#ifdef YATAIDON_PLATFORM_PS5
-    config_table.insert("ps5", toml::table{{"controller_layout_version", 2}, {"p2_controller_layout_version", 1}});
-#endif
+    platform_save_config(config, config_table);
     fs::path tmp_path = config_path;
     tmp_path += ".tmp";
     {

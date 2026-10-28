@@ -14,7 +14,7 @@ int sceAudioOutOutput(int, const void*);
 int sceAudioOutClose(int);
 }
 
-struct PS5AudioDevice {
+struct PlatformAudioDevice {
     int port = -1;
     std::atomic<bool> running{true};
     std::thread worker;

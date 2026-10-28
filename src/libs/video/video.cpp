@@ -6,14 +6,10 @@
 #include "../audio/audio.h"
 #include "../profiler.h"
 #include "../gfx/texture.h"
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../../platform/ps5_video.h"
-#endif
+#include "../../platform/platform.h"
 
 VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
-#ifdef YATAIDON_PLATFORM_PS5
     source_path = path;
-#endif
     if (path.extension() == ".png" || path.extension() == ".jpg") {
         texture = load_texture(path.string().c_str());
         is_static = true;
@@ -103,9 +99,7 @@ void VideoPlayer::decode_loop() {
         frame_generator = container->decode_video(0);
 
         int produced = 0;
-#ifdef YATAIDON_PLATFORM_PS5
-        auto hardware = PS5HardwareVideo::open(source_path, decode_stop);
-#endif
+        auto hardware = platform_open_video_decoder(source_path, decode_stop);
         while (!decode_stop.load(std::memory_order_relaxed)) {
             DecodedFrame frame;
             {
@@ -115,7 +109,6 @@ void VideoPlayer::decode_loop() {
                     spare_buffers.pop_back();
                 }
             }
-#ifdef YATAIDON_PLATFORM_PS5
             if (hardware) {
                 try {
                     if (!hardware->next(frame.bytes, frame.width, frame.height)) break;
@@ -137,13 +130,6 @@ void VideoPlayer::decode_loop() {
                 frame.height = current_decoded_frame->height();
                 current_decoded_frame.reset();
             }
-#else
-            if (!frame_generator->next(current_decoded_frame)) break;
-            current_decoded_frame->to_rgba(sws, frame.bytes);
-            frame.width = current_decoded_frame->width();
-            frame.height = current_decoded_frame->height();
-            current_decoded_frame.reset();
-#endif
             frame.index = produced++;
 
             std::unique_lock<std::mutex> lock(queue_mutex);

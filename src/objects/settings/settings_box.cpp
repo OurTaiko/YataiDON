@@ -7,6 +7,7 @@
 #include "../../libs/audio/audio.h"
 #include "../../libs/file/filesystem.h"
 #include "../../libs/input/input.h"
+#include "../../platform/platform.h"
 
 std::unique_ptr<BaseOptionBox> SettingsBox::make_option_box(const rapidjson::Value& opt) {
     if (!opt.HasMember("type") || !opt["type"].IsString() || !opt.HasMember("path") || !opt["path"].IsString()) {
@@ -28,15 +29,13 @@ std::unique_ptr<BaseOptionBox> SettingsBox::make_option_box(const rapidjson::Val
 
     std::string name = opt.HasMember("name") ? localise(opt["name"]) : "";
     std::string desc = opt.HasMember("description") ? localise(opt["description"]) : "";
-#ifdef YATAIDON_PLATFORM_PS5
-    if (path == "video/target_fps")
-        return std::make_unique<RefreshOptionBox>(name, "Select 60 or 120 FPS and matching output Hz. 120 Hz requires a compatible display.", path);
-#endif
 
     std::map<std::string, std::string> values_map;
     if (opt.HasMember("values") && opt["values"].IsObject()) {
         for (auto it = opt["values"].MemberBegin(); it != opt["values"].MemberEnd(); ++it) {
-            values_map[it->name.GetString()] = localise(it->value);
+            if (platform_offers_setting(path, it->name.GetString())) {
+                values_map[it->name.GetString()] = localise(it->value);
+            }
         }
     }
 
@@ -119,14 +118,11 @@ SettingsBox::SettingsBox(std::string name, const std::string& label_text, const 
 
     if (options_json.IsObject()) {
         for (auto it = options_json.MemberBegin(); it != options_json.MemberEnd(); ++it) {
-#ifdef YATAIDON_PLATFORM_PS5
             const auto& opt = it->value;
-            if (opt.IsObject() && opt.HasMember("path") && opt["path"].IsString()) {
-                const std::string path = opt["path"].GetString();
-                if (path == "video/vsync" || path == "video/fullscreen" || path == "video/borderless" ||
-                    path == "keys/fullscreen_key" || path == "keys/borderless_key") continue;
+            if (opt.IsObject() && opt.HasMember("path") && opt["path"].IsString() &&
+                !platform_offers_setting(opt["path"].GetString(), "")) {
+                continue;
             }
-#endif
             try {
                 options.push_back(make_option_box(it->value));
             } catch (const std::exception& e) {
