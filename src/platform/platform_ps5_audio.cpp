@@ -20,7 +20,7 @@ struct PlatformAudioDevice {
     std::thread worker;
 };
 
-PS5AudioDevice* ps5_open_audio(PS5MixCallback callback, void* context, unsigned int frames) {
+PlatformAudioDevice* ps5_open_audio(PlatformMixCallback callback, void* context, unsigned int frames) {
     if (!callback || frames < 256 || frames > 2048 || frames % 256) return nullptr;
     (void)sceAudioOutInit();
     // Main output, 48 kHz, signed 16-bit stereo (public PS5 AudioOut ABI).
@@ -29,7 +29,7 @@ PS5AudioDevice* ps5_open_audio(PS5MixCallback callback, void* context, unsigned 
         spdlog::error("sceAudioOutOpen failed: {:#x}", static_cast<unsigned>(port));
         return nullptr;
     }
-    auto* device = new PS5AudioDevice;
+    auto* device = new PlatformAudioDevice;
     device->port = port;
     try {
         device->worker = std::thread([device, callback, context, frames] {
@@ -57,7 +57,7 @@ PS5AudioDevice* ps5_open_audio(PS5MixCallback callback, void* context, unsigned 
     return device;
 }
 
-void ps5_close_audio(PS5AudioDevice* device) {
+void ps5_close_audio(PlatformAudioDevice* device) {
     if (!device) return;
     device->running.store(false);
     if (device->worker.joinable()) device->worker.join();

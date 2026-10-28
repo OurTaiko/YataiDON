@@ -3,11 +3,11 @@
 #include "../libs/gfx/sdl_compat.h"
 #include "../libs/gfx.h"
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <cstdio>
 #include <cstdlib>
 
-#include "ps5_controls.h"
 #include "ps5_video.h"
 #include "../../ps5/native-ime.h"
 #include "../libs/file/config.h"
@@ -79,8 +79,6 @@ int ps5_apply_output_refresh(int refresh_hz) {
     return accepted;
 }
 
-int ps5_output_refresh_hz() { return output_refresh; }
-
 void platform_close_window() {
     close_window();
 }
@@ -112,6 +110,25 @@ int platform_apply_target_fps(int fps) {
     const int active = ps5_apply_output_refresh(requested);
     // Fall back to whatever the display kept rather than retrying a rejected mode.
     return active == 60 || active == 120 ? active : output_refresh;
+}
+
+// DualSense drum layout (raylib gamepad button numbers).
+namespace ps5_controls {
+inline constexpr std::array left_ka{1, 4, 9, 10};
+inline constexpr std::array left_don{2, 3, 16};
+inline constexpr std::array right_ka{5, 6, 11, 12};
+inline constexpr std::array right_don{7, 8, 17};
+template<class Layout>
+bool apply_default_layout_if_empty(Layout& layout) {
+    if (!layout.left_kat.empty() || !layout.left_don.empty() ||
+        !layout.right_kat.empty() || !layout.right_don.empty()) return false;
+    layout.left_kat.assign(left_ka.begin(), left_ka.end());
+    layout.left_don.assign(left_don.begin(), left_don.end());
+    layout.right_kat.assign(right_ka.begin(), right_ka.end());
+    layout.right_don.assign(right_don.begin(), right_don.end());
+    return true;
+}
+
 }
 
 void platform_load_config(Config& config, const toml::table& file) {

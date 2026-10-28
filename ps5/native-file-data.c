@@ -48,8 +48,3 @@ unsigned char* ps5_load_file_data(const char* path, int* size) {
     *size = (int)length;
     return data;
 }
-
-char* ps5_load_file_text(const char* path) {
-    int length;
-    return (char*)ps5_load_file_data(path, &length);
-}
