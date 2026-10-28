@@ -32,9 +32,11 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   # App Store Connect expects a dSYM for every archive, Release included.
   XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS "YES"
   XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
-  # Archive collects dSYMs from Xcode's standard products folder, not from the
-  # custom RUNTIME_OUTPUT_DIRECTORY the app itself is built into.
-  XCODE_ATTRIBUTE_DWARF_DSYM_FOLDER_PATH "$(SYMROOT)/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)"
+  # Build into Xcode's standard products folder instead of the shared bin/
+  # directory. Archive then uses its own folder: a fixed path let Archive leave
+  # a symlink to its (later deleted) install copy where the next build writes
+  # the app, and kept the dSYM out of the archive.
+  XCODE_ATTRIBUTE_CONFIGURATION_BUILD_DIR "$(SYMROOT)/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)"
   XCODE_GENERATE_SCHEME TRUE)
 # A single 1024x1024 AppIcon; actool generates the per-device sizes.
 target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/ios/Assets.xcassets")
