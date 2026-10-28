@@ -1552,7 +1552,7 @@ void Player::check_kusudama(double current_ms, DrumType drum_type, const Note& b
     owner->kusudama_counter->update(current_ms, owner->kusudama_shared_hits);
 
     if (owner->kusudama_shared_hits == balloon.count.value()) {
-        audio.play_player_sound("kusudama_pop", player_num, VolumePreset::HITSOUND);
+        audio.play_player_sound("kusudama_pop", PlayerNum::ALL, VolumePreset::HITSOUND); // shared by both players
 
         is_balloon = false;
         note_correct(balloon, current_ms);

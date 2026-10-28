@@ -13,7 +13,6 @@ void EntryScreen::on_screen_start() {
     Screen::on_screen_start();
     side = 1;
     is_2p = false;
-    audio.set_two_player_mode(false);
     box_manager = std::make_unique<BoxManager>(global_data.entry_join_pending);
     if (global_data.config->network.auto_login) {
         state = EntryState::SELECT_SIDE;
@@ -329,7 +328,7 @@ void EntryScreen::start_second_player_join() {
     global_data.player_num = second;
     players[1] = std::make_unique<EntryPlayer>(second, second_side, box_manager.get());
     players[1]->start_animations();
-    audio.play_sound("cloud", VolumePreset::SOUND);
+    audio.play_player_sound("cloud", PlayerNum::ALL, VolumePreset::SOUND);
     audio.play_sound("entry_start_" + std::to_string(static_cast<int>(second)) + "p", VolumePreset::VOICE);
 
     global_data.player_num = PlayerNum::P1;
@@ -428,7 +427,7 @@ void EntryScreen::join_player(PlayerNum player_num, bool do_login) {
         is_2p = false;
         audio.set_two_player_mode(false);
     }
-    audio.play_sound("cloud", VolumePreset::SOUND);
+    audio.play_player_sound("cloud", PlayerNum::ALL, VolumePreset::SOUND);
     audio.play_sound("entry_start_" + std::to_string(static_cast<int>(player_num)) + "p", VolumePreset::VOICE);
     if (state == EntryState::SELECT_SIDE) {
         lua_entry->decide_side_select(side);

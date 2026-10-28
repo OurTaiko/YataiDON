@@ -129,7 +129,8 @@ void ResultPlayer::update_score_animation(double current_ms, bool is_skipped) {
             assign_field(field_name, std::to_string(value));
             bool is_last = (update_index == std::ssize(update_list) - 1);
             if (!count_up_sound_1p_only || player_num == PlayerNum::P1) {
-                audio.play_player_sound(is_last ? count_up_score_sound : count_up_row_sound, player_num, VolumePreset::SOUND);
+                audio.play_player_sound(is_last ? count_up_score_sound : count_up_row_sound,
+                                        count_up_sound_1p_only ? PlayerNum::ALL : player_num, VolumePreset::SOUND);
             }
             update_index++;
             score_delay.value() += (update_index == std::ssize(update_list) - 1) ? count_up_score_ms : count_up_row_ms;

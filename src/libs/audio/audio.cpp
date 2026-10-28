@@ -1501,7 +1501,7 @@ void AudioEngine::play_sound(const std::string& name, VolumePreset volume_preset
         std::scoped_lock g(play_count_lock);
         first_request = ++play_counts[name] == 1;
     }
-    std::unique_lock<std::shared_mutex> guard(rw_lock);
+    std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
         const int player = sound_player(name, volume_preset);
@@ -1527,7 +1527,7 @@ bool AudioEngine::has_sound(const std::string& name) {
 }
 
 void AudioEngine::stop_sound(const std::string& name) {
-    std::unique_lock<std::shared_mutex> guard(rw_lock);
+    std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
         for (auto* voice : sound_playbacks(it->second, name)) if (voice) {
