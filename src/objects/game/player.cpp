@@ -959,7 +959,8 @@ std::optional<Note> Player::get_first_note() {
         });
         return *first;
     }
-    return draw_note_list.front();
+    auto first = std::ranges::find_if(draw_note_list, [](const Note& n) { return n.type != NoteType::BARLINE; });
+    return first != draw_note_list.end() ? *first : draw_note_list.front();
 }
 
 // #BMSCROLL / #HBSCROLL: distance = beats to the note, so the field speeds up and slows down
