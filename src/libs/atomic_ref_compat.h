@@ -3,8 +3,8 @@
 #include <type_traits>
 
 namespace yd {
-#if defined(YATAIDON_PLATFORM_PS5) && !defined(__cpp_lib_atomic_ref)
-// The public SDK's libc++ predates atomic_ref. Keep the mixer's existing
+#if !defined(__cpp_lib_atomic_ref)
+// Older standard libraries (e.g. the PS5 SDK's libc++) predate atomic_ref. Keep the mixer's existing
 // atomic accesses using Clang's atomics, without adding declarations to std.
 inline int atomic_order(std::memory_order order) {
     switch (order) {

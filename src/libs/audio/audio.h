@@ -4,7 +4,7 @@
 #include "../gfx/sdl_compat.h"
 #include "../video/av.h"
 #include "../../platform/platform.h"
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
 #include <RtAudio.h>
 #endif
 #ifdef _WIN32
@@ -170,9 +170,8 @@ public:
         std::string source_path;
     };
     bool prepare_nus3bank_pcm(const fs::path& file_path, PreparedPCM& out, bool quick_resample = false);
-#ifdef YATAIDON_PLATFORM_PS5
+    // Decodes a whole song for a preview off the UI thread (see platform_preload_song_previews).
     bool prepare_music_pcm(const fs::path& file_path, PreparedPCM& out, const std::atomic<bool>& cancelled);
-#endif
     std::string load_music_stream_prepared(PreparedPCM&& pcm, const std::string& name);
 
     std::string load_music_stream(const fs::path& file_path, const std::string& name);
@@ -212,7 +211,7 @@ private:
     bool sdl_audio_subsystem_initialized = false;
     std::vector<float> sdl_scratch_buffer;
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
     RtAudio* rt_audio = nullptr; // ALSA/JACK/PulseAudio/OSS/CoreAudio/DirectSound/ASIO/WASAPI
 #endif
 #ifdef _WIN32
@@ -229,7 +228,7 @@ private:
     float loaded_sound_gain(const fs::path& file_path, const std::string& name);
     float loaded_song_gain(const fs::path& file_path);
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
     bool init_rtaudio_device(RtAudio::Api api, const char* label);
 #endif
 #ifdef _WIN32
@@ -239,7 +238,7 @@ private:
 
     static void mix(float* out, unsigned int framesPerBuffer, AudioEngine* engine);
     static void sdl_audio_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount);
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
     static int rt_audio_callback(void* outputBuffer, void* inputBuffer, unsigned int framesPerBuffer, double streamTime,
                                  unsigned int status, void* userData);
 #endif

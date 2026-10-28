@@ -25,7 +25,7 @@
 #include "ime_ui.h"
 #include "spdlog/spdlog.h"
 
-#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_MIDI)
 #include <libremidi/libremidi.hpp>
 #ifdef _WIN32
 #include <roapi.h>
@@ -811,7 +811,7 @@ void submit_gamepad_button_press(int button, float strength) {
     pressed_keys.emplace(vkey, std::max(strength, 0.0f));
 }
 
-#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_MIDI)
 namespace {
 
     struct MidiPortEvent {
@@ -889,7 +889,7 @@ void start_midi_input(const MidiConfig& config) {
     if (config.device.empty()) {
         return;
     }
-#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_MIDI)
     if (midi_input) {
         spdlog::warn("MIDI input listener was already started");
         return;
@@ -973,7 +973,7 @@ void start_midi_input(const MidiConfig& config) {
 }
 
 void process_midi_events() {
-#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_MIDI)
     if (!midi_input || !midi_input->events_pending.exchange(false, std::memory_order_acquire)) {
         return;
     }
@@ -1037,7 +1037,7 @@ void process_midi_events() {
 }
 
 void shutdown_midi_input() {
-#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_MIDI)
     midi_input.reset();
 #endif
 }

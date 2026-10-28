@@ -79,6 +79,10 @@ bool platform_read_file(const char* path, std::vector<unsigned char>& out);
 // e.g. no window-mode options on a console.
 bool platform_offers_setting(std::string_view path, std::string_view value);
 
+// True where streaming a song preview from disk would stall the UI (slow storage): previews
+// are decoded whole on a worker thread instead.
+bool platform_preload_song_previews();
+
 // True when memory allows keeping decoded/uploaded skin assets after a screen unloads
 // (see asset_cache.h), so revisiting a screen skips disk reads and decoding.
 bool platform_retains_assets();

@@ -53,6 +53,7 @@ target_include_directories(yataidon_ps5_game PUBLIC
   ${PS5_FFMPEG_PREFIX}/include)
 target_compile_definitions(yataidon_ps5_game PUBLIC
   YATAIDON_PLATFORM_PS5 YATAIDON_USE_SDL2 SDL_MAIN_HANDLED
+  YATAIDON_SNDFILE_PCM_ONLY # libsndfile without external codecs: FFmpeg decodes the rest
   SOL_ALL_SAFETIES_ON=1 YATAIDON_GFX_BGFX=1)
 target_compile_options(yataidon_ps5_game PRIVATE -O1 -ffunction-sections -fdata-sections)
 

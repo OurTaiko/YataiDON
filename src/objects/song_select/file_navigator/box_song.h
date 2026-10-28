@@ -30,7 +30,6 @@ public:
         AudioEngine::PreparedPCM pcm;
     };
     std::shared_ptr<PreviewLoad> preview_load;
-    std::thread preview_thread;
     bool preview_attempted = false;
     // the preview audio file, checked once on the first update()
     enum class WaveKind {
@@ -49,9 +48,6 @@ public:
     SongBox(const fs::path& path, const BoxDef& box_def, SongParser parser);
     ~SongBox() override {
         if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
-        if (preview_thread.joinable()) {
-            preview_thread.join();
-        }
         release_preview_slot();
         if (preimage.has_value()) {
             unload_texture(preimage.value());

@@ -21,14 +21,14 @@
 #include <cstring>
 #include <exception>
 #include <vector>
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_CPPTRACE)
 #include <cpptrace/cpptrace.hpp>
 #endif
 
 #include "../../platform/platform.h"
 
 static void log_stacktrace() {
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_CPPTRACE)
     try {
         std::ostringstream oss;
         cpptrace::generate_trace().print(oss, false);

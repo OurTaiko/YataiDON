@@ -262,8 +262,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     miniz
 )
 
+# Optional libraries: shared code checks these YATAIDON_HAS_* macros, never platform names.
+# (ps5/game.cmake builds without any of them.)
 if(NOT EMSCRIPTEN)
   target_link_libraries(${PROJECT_NAME} PRIVATE cpr::cpr)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE YATAIDON_HAS_HTTP)
 endif()
 
 if(YATAIDON_PROFILER)
@@ -294,6 +297,7 @@ endif()
 
 if(NOT ANDROID AND NOT IOS AND NOT EMSCRIPTEN)
   target_link_libraries(${PROJECT_NAME} PRIVATE cpptrace::cpptrace)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE YATAIDON_HAS_CPPTRACE)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -310,9 +314,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE yataidon_ebur128)
 
 if(NOT ANDROID AND NOT IOS AND NOT EMSCRIPTEN)
   target_link_libraries(${PROJECT_NAME} PRIVATE rtaudio)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE YATAIDON_HAS_RTAUDIO)
 endif()
 if(NOT EMSCRIPTEN)
   target_link_libraries(${PROJECT_NAME} PRIVATE libremidi::libremidi)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE YATAIDON_HAS_MIDI)
+endif()
+# iOS and web drive their own main loop and poll input once per frame instead.
+if(NOT IOS AND NOT EMSCRIPTEN)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE YATAIDON_INPUT_THREAD)
 endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE portaudio)
 

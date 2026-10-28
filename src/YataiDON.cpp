@@ -409,8 +409,8 @@ static void run_frame() {
     if (platform_is_suspended()) {
         return;
     }
-#if defined(YATAIDON_PLATFORM_IOS) || defined(__EMSCRIPTEN__) || defined(YATAIDON_PLATFORM_PS5)
-    poll_keyboard_once(); // no input thread on these platforms
+#ifndef YATAIDON_INPUT_THREAD
+    poll_keyboard_once(); // no input thread polling it
 #endif
     poll_touch_once();
 
@@ -680,7 +680,7 @@ static int game_main(int argc, char* argv[]) {
 #elif defined(YATAIDON_PLATFORM_IOS)
     return ios_run_main_loop(run_frame);
 #else
-#ifndef YATAIDON_PLATFORM_PS5
+#ifdef YATAIDON_INPUT_THREAD
     input_thread = std::thread(input_polling_thread);
 #endif
     start_midi_input(global_data.config->midi);

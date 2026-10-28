@@ -46,6 +46,10 @@ bool platform_read_file(const char*, std::vector<unsigned char>&) {
     return false;
 }
 
+bool platform_preload_song_previews() {
+    return false;
+}
+
 bool platform_offers_setting(std::string_view, std::string_view) {
     return true;
 }

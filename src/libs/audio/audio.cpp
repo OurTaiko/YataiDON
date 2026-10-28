@@ -33,7 +33,7 @@ static bool decode_bank(const fs::path& p, gen4::DecodedAudio& out) {
 }
 #endif
 #include <algorithm>
-#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
+#ifndef __EMSCRIPTEN__ // FFmpeg decodes what libsndfile cannot
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -287,7 +287,7 @@ static void unload_music_stream_from_map(std::unordered_map<std::string, music>&
 
 AudioEngine::AudioEngine() = default;
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
 struct RtAudioBackend {
     int device_type;
     RtAudio::Api api;
@@ -310,7 +310,7 @@ static const RtAudioBackend* find_rtaudio_backend(int device_type) {
 std::vector<std::string> enumerate_audio_devices(int device_type) {
     std::vector<std::string> names;
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
     if (const auto* backend = find_rtaudio_backend(device_type)) {
         try {
             RtAudio rt(backend->api, [](RtAudioErrorType type, const std::string& errorText) {
@@ -655,7 +655,7 @@ void AudioEngine::sdl_audio_callback(void* userdata, SDL_AudioStream* stream, in
     SDL_PutAudioStreamData(stream, engine->sdl_scratch_buffer.data(), static_cast<int>(needed_floats * sizeof(float)));
 }
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
 int AudioEngine::rt_audio_callback(void* outputBuffer, void* /*inputBuffer*/, unsigned int framesPerBuffer,
                                    double /*streamTime*/, unsigned int /*status*/, void* userData) {
     AudioEngine* engine = static_cast<AudioEngine*>(userData);
@@ -696,7 +696,7 @@ int AudioEngine::pa_stream_callback(const void* /*inputBuffer*/, void* outputBuf
 }
 #endif
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
 bool AudioEngine::init_rtaudio_device(RtAudio::Api api, const char* label) {
     rt_audio = new RtAudio(api, [](RtAudioErrorType type, const std::string& errorText) {
         if (type == RTAUDIO_WARNING) {
@@ -904,7 +904,7 @@ bool AudioEngine::init_audio_device(const fs::path& sounds_path, const AudioConf
             is_ready = true;
             return true;
         }
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
         if (const auto* backend = find_rtaudio_backend(audio_config.device_type)) {
             return init_rtaudio_device(backend->api, backend->name);
         }
@@ -946,7 +946,7 @@ void AudioEngine::close_audio_device() {
             SDL_QuitSubSystem(SDL_INIT_AUDIO);
             sdl_audio_subsystem_initialized = false;
         }
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_RTAUDIO)
         if (rt_audio != nullptr) {
             if (rt_audio->isStreamRunning()) {
                 rt_audio->stopStream();
@@ -1129,7 +1129,7 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
 
         if (!file) {
             std::string path_str = path_to_string(file_path);
-#ifdef YATAIDON_PLATFORM_PS5
+#ifdef YATAIDON_SNDFILE_PCM_ONLY
             const auto ext = file_path.extension().string();
             if (ext == ".wav" || ext == ".aif" || ext == ".aiff")
 #endif
@@ -1137,16 +1137,13 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
         }
 
         if (!file) {
-#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
+#ifndef __EMSCRIPTEN__ // FFmpeg decodes what libsndfile cannot
             float* ff_data = nullptr;
             sf_count_t ff_frames = 0;
             unsigned int ff_rate = 0, ff_ch = 0;
             std::string path_str2 = path_to_string(file_path);
-            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch
-#ifdef YATAIDON_PLATFORM_PS5
-                                     , (unsigned int)target_sample_rate
-#endif
-                                     )) {
+            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch,
+                                     static_cast<unsigned int>(target_sample_rate))) {
                 spdlog::error("Failed to open sound file: {} - {} (ffmpeg fallback also failed)", file_path.string(),
                               sf_strerror(NULL));
                 return "";
@@ -1659,13 +1656,18 @@ bool AudioEngine::prepare_nus3bank_pcm(const fs::path& file_path, PreparedPCM& o
 #endif
 }
 
-#ifdef YATAIDON_PLATFORM_PS5
 bool AudioEngine::prepare_music_pcm(const fs::path& file_path, PreparedPCM& out, const std::atomic<bool>& cancelled) {
+#ifdef __EMSCRIPTEN__
+    (void)file_path;
+    (void)out;
+    (void)cancelled;
+    return false;
+#else
     if (cancelled.load(std::memory_order_relaxed)) return false;
     float* data = nullptr;
     sf_count_t frames = 0;
     unsigned rate = 0, channels = 0;
-    if (!ffmpeg_decode_float(path_to_string(file_path).c_str(), &data, &frames, &rate, &channels, 48000, &cancelled))
+    if (!ffmpeg_decode_float(path_to_string(file_path).c_str(), &data, &frames, &rate, &channels, static_cast<unsigned int>(target_sample_rate), &cancelled))
         return false;
     out.data.reset(data);
     out.frames = static_cast<unsigned>(frames);
@@ -1673,8 +1675,8 @@ bool AudioEngine::prepare_music_pcm(const fs::path& file_path, PreparedPCM& out,
     out.channels = static_cast<int>(channels);
     out.source_path = file_path.string();
     return !cancelled.load(std::memory_order_relaxed);
-}
 #endif
+}
 
 std::string AudioEngine::load_music_stream_prepared(PreparedPCM&& pcm, const std::string& name) {
     if (!pcm.data || pcm.frames == 0 || pcm.channels <= 0) {
@@ -1725,16 +1727,13 @@ std::string AudioEngine::load_music_stream(const fs::path& file_path, const std:
         }
 
         if (!file) {
-#if defined(__ANDROID__) || defined(YATAIDON_PLATFORM_IOS) || defined(YATAIDON_PLATFORM_PS5)
+#ifndef __EMSCRIPTEN__ // FFmpeg decodes what libsndfile cannot
             float* ff_data = nullptr;
             sf_count_t ff_frames = 0;
             unsigned int ff_rate = 0, ff_ch = 0;
             std::string path_str2 = path_to_string(file_path);
-            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch
-#ifdef YATAIDON_PLATFORM_PS5
-                                     , static_cast<unsigned>(target_sample_rate)
-#endif
-                                     )) {
+            if (!ffmpeg_decode_float(path_str2.c_str(), &ff_data, &ff_frames, &ff_rate, &ff_ch,
+                                     static_cast<unsigned int>(target_sample_rate))) {
                 spdlog::error("Failed to open music file: {} - {} (ffmpeg fallback also failed)", file_path.string(),
                               sf_strerror(NULL));
                 return "";

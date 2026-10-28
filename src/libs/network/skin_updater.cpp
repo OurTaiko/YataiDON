@@ -14,7 +14,7 @@
 #include "../math/sha256.h"
 #include "android_ca.h"
 
-#if !defined(__EMSCRIPTEN__) && !defined(YATAIDON_PLATFORM_PS5)
+#if defined(YATAIDON_HAS_HTTP)
 
 #include <cpr/cpr.h>
 
@@ -547,7 +547,7 @@ void SkinUpdater::shutdown() {
 
 SkinUpdater skin_updater;
 
-#else // __EMSCRIPTEN__
+#else // no HTTP client
 
 bool SkinUpdater::available() {
     return false;

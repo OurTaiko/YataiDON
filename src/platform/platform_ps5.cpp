@@ -187,3 +187,7 @@ bool platform_take_text_replacement() {
 float platform_supersample() {
     return 1.0f;
 }
+
+bool platform_preload_song_previews() {
+    return true;
+}
