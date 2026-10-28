@@ -770,20 +770,6 @@ static std::array<int, 5> decode_levels(const std::string& s) {
     return lv;
 }
 
-void ScoresManager::set_song_meta(const std::string& path, const SongCacheEntry& entry) {
-    std::scoped_lock lock(song_meta_mutex);
-    song_meta[path] = entry;
-}
-
-std::optional<SongCacheEntry> ScoresManager::get_song_meta(const std::string& path) {
-    std::scoped_lock lock(song_meta_mutex);
-    auto it = song_meta.find(path);
-    if (it == song_meta.end()) {
-        return std::nullopt;
-    }
-    return it->second;
-}
-
 std::unordered_map<std::string, SongCacheEntry> ScoresManager::load_song_cache() {
     std::unordered_map<std::string, SongCacheEntry> cache;
     ensure_song_cache_table(db_fsd);

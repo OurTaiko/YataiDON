@@ -16,9 +16,11 @@
 #include <iterator>
 
 #include "../../libs/file/filesystem.h"
+#include "../../libs/file/scores.h"
 #include "../../libs/file/script.h"
 #include "../../libs/input/input.h"
 #include "../../libs/parsers/song_parser.h"
+#include "../../libs/song_library.h"
 #include "../song_select/file_navigator/navigator.h"
 
 int DanNavigator::total_notes_for(const std::vector<DanSongEntry>& songs) {
@@ -216,7 +218,7 @@ std::optional<DanSongEntry> DanNavigator::load_song_entry(const rapidjson::Value
             }
         }
         if (!path_opt) {
-            path_opt = navigator.find_song_by_title(chart_title, str("subtitle"));
+            path_opt = get_song_library().find_song_by_title(chart_title, str("subtitle"));
         }
         if (!path_opt) {
             spdlog::warn("DanNavigator: song '{}' not found", chart_title);
@@ -472,7 +474,7 @@ std::vector<DanBoxData> DanNavigator::scan_roots(const std::vector<fs::path>& ro
         std::error_code ec;
         signature.emplace_back(json, fs::last_write_time(json, ec));
     }
-    const size_t library_size = navigator.song_file_count();
+    const size_t library_size = get_song_library().song_file_count();
     const std::string language = global_data.config ? global_data.config->general.language : std::string();
 
     {
@@ -511,10 +513,7 @@ int DanNavigator::scan_root(const fs::path& root_path) {
 }
 
 std::vector<DanBoxData> DanNavigator::scan_all_data(const std::vector<fs::path>& song_paths) {
-    while (!navigator.song_files_ready.load() && !scan_abort.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(4));
-    }
-    if (scan_abort.load()) {
+    if (!get_song_library().wait(scan_abort)) {
         return {};
     }
 
