@@ -48,11 +48,20 @@ Because YataiDON is modular in nature, not every feature may belong in this repo
 In short:
 
 - Gameplay information, file management, note gimmicks, etc. should be handled by the **engine**.
-- Visuals, animations, information display (anything that would go in a draw() call) should be handled by the **skin**.
+- Visuals, animations, information display (anything that would go in a `draw()` call) should be handled by the **skin**.
 
 If you need to add a toggle for something in your skin, consider adding an SCO enum (skin config option).
 
 If you need to pass an animation from the skin to the engine (never hardcode an animation), use animation.json to pass it to C++.
+
+If you wish to contribute to the network aspect of the project, it is not in this repo. You are either looking for:
+
+The frontend: [YataiDON-Syakai](https://github.com/Yonokid/YataiDON-Syakai)
+The backend: [YataiDON-hiroba](https://yataidon-hiroba.vercel.app/docs)
+
+The backend is not a public project, and it may never be. There is a lot of behind the scenes work that is done to prevent false score submission and related functions, and I would prefer to not publish that until its in a state where it can never be sidestepped. However, I am always open to adding API endpoints for those in need. The API is public.
+
+As a developer, you will need your own personal API key to use the network, as your key is added to the game at compile time. Please contact me if you need to request a key and I will likely grant you one.
 
 ## <a name="intro-formatting-issues"></a>Checking and fixing formatting issues
 
@@ -133,7 +142,6 @@ int win_w = get_render_width();
 ```
 
 - Use `container.contains(key)` instead of `find(key) != end()` or `count(key)`.
-- Use `std::min`/`std::max` rather than an `if` that picks between two values.
 
 ## <a name="cpp-style-classes-and-structs"></a>Classes and structs
 
