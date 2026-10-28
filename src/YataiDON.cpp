@@ -24,7 +24,8 @@
 #include "platform/platform_ios.h"
 #include "platform/platform_windows.h"
 
-#ifdef PLATFORM_ANDROID
+// On iOS SDL must own main() to start UIKit before SDL_Init(VIDEO) can succeed.
+#if defined(PLATFORM_ANDROID) || defined(YATAIDON_PLATFORM_IOS)
 #include "libs/gfx/sdl_main_compat.h"
 #endif
 
@@ -497,9 +498,9 @@ static void run_frame() {
         reset_input_lock();
     }
 
-    draw_touch_drum();
-
     if (!global_data.skinless) {
+        draw_touch_drum();
+
         if (global_data.config->general.fps_counter) {
             L.fps_counter.update();
             L.fps_counter.draw();
