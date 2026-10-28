@@ -60,17 +60,6 @@ Background::Background(PlayerNum player_num, float bpm, const std::string& scene
         fn_handle_balloon_end = lua_object["handle_balloon_end"];
         fn_handle_gogo = lua_object["handle_gogo"];
         fn_handle_miss_streak = lua_object["handle_miss_streak"];
-        // Legacy collabs expose one top band and a full-screen 1P stage.
-        // In 2P, repeat the band rather than exposing that stage below P2.
-        const sol::object collab_obj = lua_object["collab"];
-        if (player_num == PlayerNum::TWO_PLAYER && collab_obj.is<sol::table>()) {
-            const sol::table collab = collab_obj.as<sol::table>();
-            const sol::object band = collab["donbg"];
-            if (band.is<sol::table>() && !collab["donbg_1"].valid() && !collab["donbg_2"].valid()) {
-                collab_band = band.as<sol::table>();
-                fn_draw_collab_band = collab_band["draw"];
-            }
-        }
     }
 }
 
@@ -274,16 +263,6 @@ void Background::handle_skip(PlayerNum player_num, const sol::table& state) {
 }
 
 void Background::draw_back() {
-    if (fn_draw_collab_band.valid()) {
-        for (float y : {0.0f, 536.0f * tex.screen_scale}) {
-            auto result = fn_draw_collab_band(collab_band, y);
-            if (!result.valid()) {
-                sol::error err = result;
-                spdlog::error("Error drawing 2P collab band: {}", err.what());
-            }
-        }
-        return;
-    }
     if (!fn_draw_back.valid()) {
         return;
     }
@@ -297,9 +276,6 @@ void Background::draw_back() {
 }
 
 void Background::draw_fore() {
-    if (fn_draw_collab_band.valid()) {
-        return; // Full-stage foreground belongs to the collab's 1P layout.
-    }
     if (!fn_draw_fore.valid()) {
         return;
     }

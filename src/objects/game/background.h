@@ -5,8 +5,6 @@
 class Background {
 private:
     sol::table lua_object;
-    sol::table collab_band;
-    sol::protected_function fn_draw_collab_band;
     sol::protected_function fn_update;
     sol::protected_function fn_handle_good;
     sol::protected_function fn_handle_ok;
