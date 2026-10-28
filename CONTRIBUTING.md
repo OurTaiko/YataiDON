@@ -47,8 +47,8 @@ This project uses clang-format to check for common style issues. In case of conf
 Because YataiDON is modular in nature, not every feature may belong in this repo. The skin API is very large and can likely handle your case. 
 In short:
 
-Gameplay information, file management, note gimmicks, etc. should be handled by the **engine**.
-Visuals, animations, information display (anything that would go in a draw() call) should be handled by the **skin**.
+- Gameplay information, file management, note gimmicks, etc. should be handled by the **engine**.
+- Visuals, animations, information display (anything that would go in a draw() call) should be handled by the **skin**.
 
 If you need to add a toggle for something in your skin, consider adding an SCO enum (skin config option).
 
