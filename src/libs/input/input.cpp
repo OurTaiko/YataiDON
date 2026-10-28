@@ -545,18 +545,6 @@ void poll_keyboard_once() {
 #ifdef YATAIDON_PLATFORM_PS5
     if (SDL_Window* window = main_window(); window && SDL_IsScreenKeyboardShown(window)) return;
 #endif
-#ifdef YATAIDON_PLATFORM_PS5
-    static int logged_controllers = -1;
-    const int controllers = SDL_NumJoysticks();
-    if (controllers != logged_controllers) {
-        std::fprintf(stderr, "[yataidon-ps5] SDL controllers=%d error=%s\n", controllers, SDL_GetError());
-        for (int i = 0; i < controllers; ++i)
-            std::fprintf(stderr, "[yataidon-ps5] pad %d name=%s mapped=%d raylib=%d\n", i,
-                         SDL_JoystickNameForIndex(i) ? SDL_JoystickNameForIndex(i) : "unknown",
-                         SDL_IsGameController(i), SDL_IsGameController(i));
-        logged_controllers = controllers;
-    }
-#endif
     if (is_input_locked()) {
         return;
     }
@@ -713,10 +701,6 @@ void poll_keyboard_once() {
     // whatever navigates the menu before the option box ever sees it.
     for (int vkey : local_pressed) {
         if (vkey >= GAMEPAD_VKEY_BASE && vkey < AXIS_VKEY_BASE) {
-#ifdef YATAIDON_PLATFORM_PS5
-            static int logged_presses = 0;
-            if (logged_presses++ < 8) std::fprintf(stderr, "[yataidon-ps5] button=%d\n", vkey - GAMEPAD_VKEY_BASE);
-#endif
             last_gamepad_vkey.store(vkey, std::memory_order_relaxed);
             break;
         }

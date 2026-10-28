@@ -92,10 +92,9 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
     }
 
     SwrContext* swr = nullptr;
+    // Keep mono sources mono, like the libsndfile path; the mixer pans them.
     AVChannelLayout out_layout = AV_CHANNEL_LAYOUT_STEREO;
-#ifdef YATAIDON_PLATFORM_PS5
     if (dec->ch_layout.nb_channels == 1) out_layout = AV_CHANNEL_LAYOUT_MONO;
-#endif
     int out_ch = out_layout.nb_channels;
     const int output_rate = requested_rate ? int(requested_rate) : dec->sample_rate;
     if (swr_alloc_set_opts2(&swr, &out_layout, AV_SAMPLE_FMT_FLT, output_rate, &dec->ch_layout, dec->sample_fmt,
@@ -1065,9 +1064,7 @@ void AudioEngine::store_sound(const std::string& name, const sound& snd) {
         delete[] it->second.resample_buffer;
     }
     sounds[name] = snd;
-#ifdef YATAIDON_PLATFORM_PS5
-    if (name == "bgm" || name.ends_with("_bgm")) sounds[name].loop = true;
-#endif
+    sounds[name].loop = is_bgm_sound(name);
     for (auto& voice : sounds[name].player_playback) {
         voice = static_cast<const SoundPlayback&>(sounds[name]);
         voice.is_playing = false;
@@ -1473,7 +1470,7 @@ void AudioEngine::set_two_player_mode(bool enabled) {
 }
 
 int AudioEngine::sound_player(const std::string& name, VolumePreset preset) const {
-    if (!two_player_mode || preset == VolumePreset::MUSIC || name == "bgm" || name.ends_with("_bgm")) {
+    if (!two_player_mode || preset == VolumePreset::MUSIC || is_bgm_sound(name)) {
         return -1;
     }
     const int player = PlayerSoundScope::player();

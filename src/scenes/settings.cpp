@@ -84,10 +84,9 @@ Screens SettingsScreen::on_screen_end(Screens next_screen) {
 }
 
 std::optional<Screens> SettingsScreen::handle_input() {
-#ifdef YATAIDON_PLATFORM_PS5
-    if (!box_manager->editing_text() && check_key_pressed(global_data.config->keys.back_key))
+    if (!box_manager->editing() && check_key_pressed(global_data.config->keys.back_key)) {
         return on_screen_end(Screens::ENTRY);
-#endif
+    }
     if (key_pressed(SDL_SCANCODE_F1)) {
         return on_screen_end(Screens::INPUT_CALI);
     }

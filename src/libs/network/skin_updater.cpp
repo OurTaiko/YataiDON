@@ -449,6 +449,10 @@ void SkinUpdater::scan_skins() {
     clear_session_pool();
 }
 
+bool SkinUpdater::available() {
+    return true;
+}
+
 void SkinUpdater::start() {
     if (started_.exchange(true)) {
         return;
@@ -545,6 +549,9 @@ SkinUpdater skin_updater;
 
 #else // __EMSCRIPTEN__
 
+bool SkinUpdater::available() {
+    return false;
+}
 void SkinUpdater::start() {}
 void SkinUpdater::download(std::vector<Request>) {}
 bool SkinUpdater::in_progress() {

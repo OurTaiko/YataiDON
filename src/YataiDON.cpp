@@ -469,31 +469,12 @@ static void run_frame() {
     }
 
     network.update(g_frame_ms);
-#ifdef YATAIDON_PLATFORM_PS5
-    static Screens traced_screen = Screens::ONBOARDING;
-    static unsigned traced_frames = 0;
-    static double last_trace_ms = -1e9;
-    if (traced_screen != L.current_screen) {
-        traced_screen = L.current_screen;
-        traced_frames = 0;
-    }
-    const bool trace_frame = traced_frames++ < 3 || g_frame_ms - last_trace_ms > 5000;
-    const double update_begin_ms = get_current_ms();
-    if (trace_frame) {
-        last_trace_ms = g_frame_ms;
-        spdlog::info("PS5 frame {}: update begin", L.current_screen);
-    }
-#endif
     std::optional<Screens> next_screen;
     {
         PROFILE_SCOPE_N("screen update");
         PROFILE_ZONE_TEXT(screen->screen_name);
         next_screen = screen->update();
     }
-#ifdef YATAIDON_PLATFORM_PS5
-    const double draw_begin_ms = get_current_ms();
-    if (trace_frame) spdlog::info("PS5 frame {}: update {:.1f} ms; draw begin", traced_screen, draw_begin_ms - update_begin_ms);
-#endif
     sync_text_input();
 
     if (!next_screen.has_value() && debug_menu.requested_screen.has_value()) {
@@ -548,10 +529,6 @@ static void run_frame() {
 
     draw_outer_border(tex.screen_width, tex.screen_height, L.last_color);
 
-#ifdef YATAIDON_PLATFORM_PS5
-    const double present_begin_ms = get_current_ms();
-    if (trace_frame) spdlog::info("PS5 frame {}: draw {:.1f} ms; present begin", traced_screen, present_begin_ms - draw_begin_ms);
-#endif
     end_blend_mode();
     end_mode_2d();
     {
@@ -562,9 +539,6 @@ static void run_frame() {
             swap_screen_buffer();
         }
     }
-#ifdef YATAIDON_PLATFORM_PS5
-    if (trace_frame) spdlog::info("PS5 frame {}: present {:.1f} ms; frame complete", traced_screen, get_current_ms() - present_begin_ms);
-#endif
 
     if (key_pressed(SDL_SCANCODE_F12)) {
         static int screenshot_counter = 0;

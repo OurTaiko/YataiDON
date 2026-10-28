@@ -55,9 +55,6 @@ VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
     }
 
     fps = video_stream->average_rate().value_or(0.f);
-#ifdef YATAIDON_PLATFORM_PS5
-    spdlog::info("PS5 video {}: {}x{} at {} FPS", path.filename().string(), video_stream->width(), video_stream->height(), fps);
-#endif
 
     duration =
         (container->duration() > 0) ? static_cast<double>(container->duration()) / av::AVContainer::time_base() : 0.0;
@@ -184,11 +181,8 @@ void VideoPlayer::stop_decode_thread() {
 }
 
 void VideoPlayer::upload_frame(const DecodedFrame& frame) {
-#ifdef YATAIDON_PLATFORM_PS5
-    const double upload_begin = get_current_ms();
     std::swap(texture, upload_spares[upload_slot]);
     upload_slot = (upload_slot + 1) % upload_spares.size();
-#endif
     const void* pixels_ptr = static_cast<const void*>(frame.bytes.data());
 
     if (texture.has_value() && (texture->width != frame.width || texture->height != frame.height)) {
@@ -210,10 +204,6 @@ void VideoPlayer::upload_frame(const DecodedFrame& frame) {
     } else {
         update_texture(texture.value(), pixels_ptr);
     }
-#ifdef YATAIDON_PLATFORM_PS5
-    if (++upload_count <= 3 || upload_count % 300 == 0)
-        spdlog::info("PS5 video upload {}: {:.2f} ms", upload_count, get_current_ms() - upload_begin);
-#endif
 }
 
 bool VideoPlayer::is_started() const {
@@ -334,13 +324,11 @@ void VideoPlayer::draw() {
 
 void VideoPlayer::stop() {
     stop_decode_thread();
-#ifdef YATAIDON_PLATFORM_PS5
     for (auto& spare : upload_spares) {
         if (spare) unload_texture(*spare);
         spare.reset();
     }
-    upload_slot = upload_count = 0;
-#endif
+    upload_slot = 0;
     start_ms.reset();
 
     if (is_static) {

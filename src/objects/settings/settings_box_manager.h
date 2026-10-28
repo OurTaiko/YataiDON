@@ -19,6 +19,7 @@ public:
     // Returns true if the exit box was selected, otherwise false
     bool select_box();
     bool editing_text() const { return box_selected && boxes[selected_box_index]->editing_text(); }
+    bool editing() const { return box_selected && boxes[selected_box_index]->editing(); }
 
     std::optional<Screens> pending_screen_change();
 

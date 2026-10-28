@@ -517,11 +517,7 @@ namespace av {
         static std::unique_ptr<AVContainer> open(const std::filesystem::path& path) {
             ::AVFormatContext* ctx = nullptr;
             try {
-#ifdef YATAIDON_PLATFORM_PS5
-                auto input_path = std::filesystem::absolute(path);
-#else
-                const auto& input_path = path;
-#endif
+                const auto input_path = std::filesystem::absolute(path);
                 check(avformat_open_input(&ctx, input_path.string().c_str(), nullptr, nullptr), "avformat_open_input");
                 check(avformat_find_stream_info(ctx, nullptr), "avformat_find_stream_info");
             } catch (...) {

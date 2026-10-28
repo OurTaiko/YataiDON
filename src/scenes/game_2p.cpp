@@ -69,11 +69,9 @@ std::optional<Screens> Game2PScreen::update() {
     if (check_key_pressed(global_data.config->keys.back_key)) {
         return on_screen_end(Screens::SONG_SELECT_2P);
     }
-#ifndef YATAIDON_PLATFORM_PS5
     if (check_key_pressed(global_data.config->keys.pause_key)) {
         toggle_pause();
     }
-#endif
 
     return std::nullopt;
 }

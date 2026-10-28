@@ -24,13 +24,10 @@ private:
     };
 
     std::optional<Texture> texture;
-#ifdef YATAIDON_PLATFORM_PS5
     // Active texture plus two spares: don't overwrite the previous display's
     // sampled storage when a new video frame arrives.
     std::array<std::optional<Texture>, 2> upload_spares;
     unsigned upload_slot = 0;
-    unsigned upload_count = 0;
-#endif
     std::array<bool, 2> is_finished_arr = {false, false};
     bool audio_started = false;
     std::string audio_s;

@@ -101,14 +101,14 @@ void OnboardingScreen::begin_download() {
         error = "Select at least one skin";
         return;
     }
-#ifdef YATAIDON_PLATFORM_PS5
-    for (int i = 0; i < kSkinCount; ++i) {
-        if (selected[i] && !installed[i]) {
-            error = "Install selected skins in /data/YataiDON/Skins first";
-            return;
+    if (!SkinUpdater::available()) {
+        for (int i = 0; i < kSkinCount; ++i) {
+            if (selected[i] && !installed[i]) {
+                error = "Install selected skins in " + fs::absolute("Skins").string() + " first";
+                return;
+            }
         }
     }
-#endif
     downloading = true;
     download_started = false;
 }
@@ -203,27 +203,16 @@ std::optional<Screens> OnboardingScreen::update() {
         return on_screen_end(skinless_start ? Screens::LOADING : Screens::TITLE);
     }
 
-#ifdef YATAIDON_PLATFORM_PS5
+    // Up/Down (arrows or D-pad) move between rows; the drum-only scheme below still works
     const int rows = kSkinCount + 2;
     if (key_pressed(SDL_SCANCODE_UP) || check_key_pressed(10000 + 1)) {
         row = (row + rows - 1) % rows;
-    } else if (key_pressed(SDL_SCANCODE_DOWN) || check_key_pressed(10000 + 3)) {
-        row = (row + 1) % rows;
-    } else if (is_l_kat_pressed() || menu_left_pressed() || is_r_kat_pressed() || menu_right_pressed()) {
-        if (row == online_row()) {
-            online = !online;
-        }
-    } else if (is_l_don_pressed() || is_r_don_pressed() || menu_confirm_pressed()) {
-        if (row < kSkinCount) {
-            toggle_skin(row);
-        } else if (row == online_row()) {
-            online = !online;
-            row = continue_row();
-        } else {
-            begin_download();
-        }
+        return std::nullopt;
     }
-#else
+    if (key_pressed(SDL_SCANCODE_DOWN) || check_key_pressed(10000 + 3)) {
+        row = (row + 1) % rows;
+        return std::nullopt;
+    }
     // drum-only: don moves down (starts the download on Continue), kat toggles the current row
     if (menu_confirm_pressed()) {
         if (row == continue_row()) {
@@ -240,7 +229,6 @@ std::optional<Screens> OnboardingScreen::update() {
             row = 0; // kat on Continue: back to the top
         }
     }
-#endif
     return std::nullopt;
 }
 
@@ -289,10 +277,6 @@ void OnboardingScreen::draw() {
     if (!error.empty()) {
         draw_line(error, 565 * s, static_cast<int>(22 * s), Color::RED);
     }
-#ifdef YATAIDON_PLATFORM_PS5
-    draw_line("D-pad Up/Down: move    Cross: select", 650 * s, static_cast<int>(20 * s),
-#else
-    draw_line("Don: next / continue    Ka: toggle", 650 * s, static_cast<int>(20 * s),
-#endif
+    draw_line("Don: next / continue    Ka: toggle    Up/Down: move", 650 * s, static_cast<int>(20 * s),
               Color::GRAY);
 }

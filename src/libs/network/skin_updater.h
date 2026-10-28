@@ -27,6 +27,9 @@ public:
         std::string branch = "main";
     };
 
+    // False on builds without an HTTP client: skins must already be installed.
+    static bool available();
+
     void download(std::vector<Request> requests);
 
     void start();

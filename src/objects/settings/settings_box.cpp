@@ -222,6 +222,9 @@ bool SettingsBox::editing_text() const {
     return !options.empty() && options[option_index]->is_highlighted && options[option_index]->needs_text_input();
 }
 
+// Any option capturing input (text, keybind, value list) owns the back key.
+bool SettingsBox::editing() const { return !options.empty() && options[option_index]->is_highlighted; }
+
 void SettingsBox::select() {
     in_box = true;
 }

@@ -46,6 +46,9 @@ struct VirtualFile {
 
 enum class PlayerNum;
 
+// Background music sounds ("bgm", "*_bgm") loop unless a caller says otherwise.
+inline bool is_bgm_sound(const std::string& name) { return name == "bgm" || name.ends_with("_bgm"); }
+
 // Player-owned callbacks (including skin Lua calls) inherit this audio owner.
 class PlayerSoundScope {
     int previous;

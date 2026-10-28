@@ -988,11 +988,7 @@ void ScriptManager::register_lua_bindings() {
             }
             PlayerSoundScope audio_owner(preset == VolumePreset::MUSIC ? PlayerNum::ALL :
                 static_cast<PlayerNum>(player.value_or(PlayerSoundScope::player())));
-#ifdef YATAIDON_PLATFORM_PS5
-            audio.set_sound_loop(name, loop.value_or(name == "bgm" || name.ends_with("_bgm")));
-#else
-            audio.set_sound_loop(name, loop.value_or(false));
-#endif
+            audio.set_sound_loop(name, loop.value_or(is_bgm_sound(name)));
             audio.play_sound(name, preset);
         });
 
