@@ -93,18 +93,10 @@ void load_skin() {
     }
 }
 
-// Shader cache destruction must run while the GL context is still alive.
-#include "color_shader.h"
+// Cached shaders/textures must be released while the GL context is still alive.
+#include "asset_cache.h"
 void unload_skin() {
-#ifdef YATAIDON_PLATFORM_PS5
-    color_shader_cache().clear();
-    extern void clear_ps5_texture_cache();
-    extern void clear_ps5_audio_cache();
-    extern void clear_ps5_file_cache();
-    clear_ps5_file_cache();
-    clear_ps5_texture_cache();
-    clear_ps5_audio_cache();
-#endif
+    clear_asset_caches();
     navigator.reset_for_skin_reload();
     debug_menu.clear_selection();
     debug_menu.unload_fonts();

@@ -24,3 +24,7 @@ double platform_game_time_ms();
 
 // True while the OS has the app backgrounded; frames should be skipped.
 bool platform_is_suspended();
+
+// True when memory allows keeping decoded/uploaded skin assets after a screen unloads
+// (see asset_cache.h), so revisiting a screen skips disk reads and decoding.
+bool platform_retains_assets();

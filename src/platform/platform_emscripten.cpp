@@ -30,3 +30,8 @@ int emscripten_run_main_loop(void (*run_frame)()) {
     emscripten_set_main_loop(run_frame, 0, 1);
     return 0;
 }
+
+// The wasm heap and WebGL memory are too tight to keep assets between screens.
+bool platform_retains_assets() {
+    return false;
+}

@@ -74,3 +74,7 @@ int ps5_output_refresh_hz() { return output_refresh; }
 void platform_close_window() {
     close_window();
 }
+
+bool platform_retains_assets() {
+    return true;
+}

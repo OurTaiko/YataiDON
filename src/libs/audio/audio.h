@@ -75,9 +75,7 @@ struct SoundPlayback {
 };
 
 struct sound : SoundPlayback {
-#ifdef YATAIDON_PLATFORM_PS5
-    std::shared_ptr<float[]> cached_data;
-#endif
+    std::shared_ptr<float[]> cached_data; // owns `data` when shared with the asset cache
     float* data = nullptr;        // Audio sample data (interleaved stereo or mono)
     unsigned int frame_count = 0; // Total number of frames in the sound
     unsigned int sample_rate = 0; // Original sample rate of the audio

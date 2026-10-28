@@ -3,6 +3,7 @@
 
 #include "../../platform/platform_ios.h"
 #include "../../platform/platform_windows.h"
+#include "../asset_cache.h"
 #include "../profiler.h"
 #include "loudness.h"
 #include "spdlog/spdlog.h"
@@ -1032,32 +1033,25 @@ static float* adopt_decoded_pcm(std::vector<float>& samples, int channels, unsig
     return resampled;
 }
 
-#ifdef YATAIDON_PLATFORM_PS5
-#include "../asset_cache.h"
+// Decoded sounds and each screen's sound list, kept across screens.
 static AssetCache<sound>& decoded_sound_cache() {
-    static AssetCache<sound> cache(96u << 20);
+    static AssetCache<sound> cache(asset_cache_budget(96u << 20));
     return cache;
 }
 using SoundManifest = std::vector<std::pair<fs::path, std::string>>;
 static AssetCache<SoundManifest>& sound_manifest_cache() {
-    static AssetCache<SoundManifest> cache(4u << 20);
+    static AssetCache<SoundManifest> cache(asset_cache_budget(4u << 20));
     return cache;
 }
-void clear_ps5_audio_cache() {
-    decoded_sound_cache().clear();
-    sound_manifest_cache().clear();
-}
-#endif
 
 void AudioEngine::store_sound(const std::string& name, const sound& snd) {
     std::unique_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
         yd::atomic_ref<bool>(it->second.is_playing).store(false, std::memory_order_relaxed);
-#ifdef YATAIDON_PLATFORM_PS5
-        if (!it->second.cached_data)
-#endif
-        delete[] it->second.data;
+        if (!it->second.cached_data) {
+            delete[] it->second.data;
+        }
         if (it->second.resampler) {
             src_delete(it->second.resampler);
         }
@@ -1092,19 +1086,18 @@ float AudioEngine::loaded_song_gain(const fs::path& file_path) {
 
 std::string AudioEngine::load_sound(const fs::path& file_path, const std::string& name) {
     try {
-#ifdef YATAIDON_PLATFORM_PS5
         const std::string cache_key = file_path.lexically_normal().string() + ":" + std::to_string(target_sample_rate);
         if (auto cached = decoded_sound_cache().get(cache_key)) {
             store_sound(name, *cached);
             return name;
         }
-#endif
         auto install_sound = [&](sound snd) {
-#ifdef YATAIDON_PLATFORM_PS5
-            snd.cached_data = std::shared_ptr<float[]>(snd.data);
-            const size_t bytes = size_t(snd.frame_count) * snd.channels * sizeof(float);
-            decoded_sound_cache().put(cache_key, std::make_shared<sound>(snd), bytes);
-#endif
+            if (decoded_sound_cache().enabled()) {
+                // shared PCM: the cache and the loaded sound both keep it alive
+                snd.cached_data = std::shared_ptr<float[]>(snd.data);
+                const size_t bytes = size_t(snd.frame_count) * snd.channels * sizeof(float);
+                decoded_sound_cache().put(cache_key, std::make_shared<sound>(snd), bytes);
+            }
             store_sound(name, snd);
         };
         if (name == "song") {
@@ -1273,88 +1266,88 @@ void AudioEngine::load_screen_sounds(const std::string& screen_name) {
     std::vector<std::pair<fs::path, std::string>> queue;
     std::unordered_set<std::string> claimed;
 
-#ifdef YATAIDON_PLATFORM_PS5
     std::string manifest_key = sounds_path.lexically_normal().string() + "/" + screen_name;
-    for (const auto& root : skin_ancestor_roots()) manifest_key += ":" + root.string();
+    for (const auto& root : skin_ancestor_roots()) {
+        manifest_key += ":" + root.string();
+    }
     if (auto cached = sound_manifest_cache().get(manifest_key)) {
         queue = *cached;
     } else {
-#endif
-    auto want = [&](const fs::path& file, const std::string& name, bool known_file = false) {
-        if (!claimed.insert(name).second) {
-            return;
-        }
-        if (!known_file && !fs::exists(file)) {
-            claimed.erase(name);
-            return;
-        }
-        queue.emplace_back(file, name);
-    };
-
-    auto scan = [&](const fs::path& dir) {
-        if (!fs::exists(dir)) {
-            return;
-        }
-        try {
-            for (const auto& entry : fs::directory_iterator(dir)) {
-                if (entry.is_directory()) {
-                    for (const auto& file : fs::directory_iterator(entry.path())) {
-                        if (file.is_regular_file()) want(file.path(), entry.path().stem().string() + "_" + file.path().stem().string(), true);
-                    }
-                } else if (entry.is_regular_file()) {
-                    want(entry.path(), entry.path().stem().string(), true);
-                }
+        auto want = [&](const fs::path& file, const std::string& name, bool known_file = false) {
+            if (!claimed.insert(name).second) {
+                return;
             }
-        } catch (const fs::filesystem_error& e) {
-            spdlog::error("load_screen_sounds: error scanning {}: {}", dir.string(), e.what());
+            if (!known_file && !fs::exists(file)) {
+                claimed.erase(name);
+                return;
+            }
+            queue.emplace_back(file, name);
+        };
+
+        auto scan = [&](const fs::path& dir) {
+            if (!fs::exists(dir)) {
+                return;
+            }
+            try {
+                for (const auto& entry : fs::directory_iterator(dir)) {
+                    if (entry.is_directory()) {
+                        for (const auto& file : fs::directory_iterator(entry.path())) {
+                            if (file.is_regular_file()) want(file.path(), entry.path().stem().string() + "_" + file.path().stem().string(), true);
+                        }
+                    } else if (entry.is_regular_file()) {
+                        want(entry.path(), entry.path().stem().string(), true);
+                    }
+                }
+            } catch (const fs::filesystem_error& e) {
+                spdlog::error("load_screen_sounds: error scanning {}: {}", dir.string(), e.what());
+            }
+        };
+
+        // the ancestors' Sounds (parent, its parent, ...), nearest first: the first file claims a name
+        std::vector<fs::path> ancestor_sounds;
+        for (const fs::path& root : skin_ancestor_roots()) {
+            ancestor_sounds.push_back(root / "Sounds");
         }
-    };
 
-    // the ancestors' Sounds (parent, its parent, ...), nearest first: the first file claims a name
-    std::vector<fs::path> ancestor_sounds;
-    for (const fs::path& root : skin_ancestor_roots()) {
-        ancestor_sounds.push_back(root / "Sounds");
-    }
-
-    fs::path path = sounds_path / screen_name;
-    // A screen without its own sound folder still gets don/kat and the
-    // global folder - those are screen-independent. Returning here also
-    // took those away, leaving such screens (input_test, loading) silent.
-    bool has_screen_sounds = fs::exists(path);
-    for (const fs::path& dir : ancestor_sounds) {
-        has_screen_sounds = has_screen_sounds || fs::exists(dir / screen_name);
-    }
-    if (!has_screen_sounds) {
-        spdlog::warn("Sounds for screen {} not found", screen_name);
-    }
-
-    want(sounds_path / "don.wav", "don");
-    for (const fs::path& dir : ancestor_sounds) {
-        want(dir / "don.wav", "don");
-    }
-    want(sounds_path / "ka.wav", "kat");
-    for (const fs::path& dir : ancestor_sounds) {
-        want(dir / "ka.wav", "kat");
-    }
-
-    if (has_screen_sounds) {
-        scan(path);
+        fs::path path = sounds_path / screen_name;
+        // A screen without its own sound folder still gets don/kat and the
+        // global folder - those are screen-independent. Returning here also
+        // took those away, leaving such screens (input_test, loading) silent.
+        bool has_screen_sounds = fs::exists(path);
         for (const fs::path& dir : ancestor_sounds) {
-            scan(dir / screen_name);
+            has_screen_sounds = has_screen_sounds || fs::exists(dir / screen_name);
         }
-    }
+        if (!has_screen_sounds) {
+            spdlog::warn("Sounds for screen {} not found", screen_name);
+        }
 
-    scan(sounds_path / "global");
-    for (const fs::path& dir : ancestor_sounds) {
-        scan(dir / "global");
-    }
+        want(sounds_path / "don.wav", "don");
+        for (const fs::path& dir : ancestor_sounds) {
+            want(dir / "don.wav", "don");
+        }
+        want(sounds_path / "ka.wav", "kat");
+        for (const fs::path& dir : ancestor_sounds) {
+            want(dir / "ka.wav", "kat");
+        }
 
-#ifdef YATAIDON_PLATFORM_PS5
+        if (has_screen_sounds) {
+            scan(path);
+            for (const fs::path& dir : ancestor_sounds) {
+                scan(dir / screen_name);
+            }
+        }
+
+        scan(sounds_path / "global");
+        for (const fs::path& dir : ancestor_sounds) {
+            scan(dir / "global");
+        }
+
         size_t bytes = sizeof(SoundManifest);
-        for (const auto& [file, name] : queue) bytes += sizeof(SoundManifest::value_type) + file.string().size() + name.size();
+        for (const auto& [file, name] : queue) {
+            bytes += sizeof(SoundManifest::value_type) + file.string().size() + name.size();
+        }
         sound_manifest_cache().put(manifest_key, std::make_shared<SoundManifest>(queue), bytes);
     }
-#endif
     unsigned hw = std::thread::hardware_concurrency();
     size_t workers = std::min<size_t>(queue.size(), hw ? hw : 4);
     if (workers <= 1) {
@@ -1387,10 +1380,9 @@ void AudioEngine::unload_sound(const std::string& name) {
         yd::atomic_ref<bool>(snd.is_playing).store(false, std::memory_order_relaxed);
 
         if (snd.data) {
-#ifdef YATAIDON_PLATFORM_PS5
-            if (!snd.cached_data)
-#endif
-            delete[] snd.data;
+            if (!snd.cached_data) {
+                delete[] snd.data;
+            }
             snd.data = nullptr;
         }
 

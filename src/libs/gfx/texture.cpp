@@ -18,19 +18,18 @@
 #include "../global_data.h"
 #include "../profiler.h"
 #include "text.h"
-#ifdef YATAIDON_PLATFORM_PS5
 #include "../asset_cache.h"
+
+// Uploaded textures by PNG path, kept across screens (with their alpha border).
 struct CachedGPUTexture {
     std::shared_ptr<Texture> texture;
     Rect border;
     bool has_border;
 };
 static AssetCache<CachedGPUTexture>& gpu_asset_cache() {
-    static AssetCache<CachedGPUTexture> cache(128u << 20);
+    static AssetCache<CachedGPUTexture> cache(asset_cache_budget(128u << 20));
     return cache;
 }
-void clear_ps5_texture_cache() { gpu_asset_cache().clear(); }
-#endif
 
 namespace {
 
@@ -908,25 +907,25 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
             // images load_screen_textures already decoded, the rest here
             std::vector<Image> images(files.size());
             std::vector<std::shared_ptr<Texture>> gpu(files.size());
-#ifdef YATAIDON_PLATFORM_PS5
             std::vector<char> needs_border(files.size(), 0);
-            for (const auto& p : pending) if (!p.framed) needs_border[p.first_file] = true;
-#endif
+            for (const auto& p : pending) {
+                if (!p.framed) {
+                    needs_border[p.first_file] = true;
+                }
+            }
             std::vector<Rect> borders(files.size());
             std::vector<char> has_border(files.size(), 0);
             std::vector<fs::path> rest;
             std::vector<size_t> rest_index;
             for (size_t i = 0; i < files.size(); ++i) {
-#ifdef YATAIDON_PLATFORM_PS5
                 if (auto cached = gpu_asset_cache().get(files[i].string())) {
                     if (!needs_border[i] || cached->has_border) {
-                    gpu[i] = cached->texture;
-                    borders[i] = cached->border;
-                    has_border[i] = cached->has_border;
-                    continue;
+                        gpu[i] = cached->texture;
+                        borders[i] = cached->border;
+                        has_border[i] = cached->has_border;
+                        continue;
                     }
                 }
-#endif
                 bool got_border = false;
                 if (image_prefetch && image_prefetch->take(files[i], images[i], borders[i], got_border)) {
                     has_border[i] = got_border;
@@ -964,15 +963,20 @@ void TextureWrapper::load_folder(const std::string& screen_name, const std::stri
                                 } else {
                                     tex = shared_texture(t);
                                     gpu[fi] = tex;
-#ifdef YATAIDON_PLATFORM_PS5
-                                    if (!p.framed && !has_border[fi]) {
-                                        borders[fi] = get_image_alpha_border(img, 0.0f);
-                                        has_border[fi] = true;
+                                    if (gpu_asset_cache().enabled()) {
+                                        // the image is freed after upload; keep its border for cache hits
+                                        if (!p.framed && !has_border[fi]) {
+                                            borders[fi] = get_image_alpha_border(img, 0.0f);
+                                            has_border[fi] = true;
+                                        }
+                                        const size_t bytes =
+                                            (size_t(get_pixel_data_size(t.width, t.height, t.format)) + 65535u) &
+                                            ~size_t(65535u);
+                                        gpu_asset_cache().put(files[fi].string(),
+                                                              std::make_shared<CachedGPUTexture>(CachedGPUTexture{
+                                                                  tex, borders[fi], bool(has_border[fi])}),
+                                                              bytes);
                                     }
-                                    auto cached = std::make_shared<CachedGPUTexture>(CachedGPUTexture{tex, borders[fi], bool(has_border[fi])});
-                                    gpu_asset_cache().put(files[fi].string(), cached,
-                                        (size_t(get_pixel_data_size(t.width, t.height, t.format)) + 65535u) & ~size_t(65535u));
-#endif
                                 }
                             }
                         }
@@ -1184,17 +1188,17 @@ void TextureWrapper::load_screen_textures(const std::string& screen_name) {
                     if (const auto* frames = dirs.list(p)) {
                         for (const DirIndex::Entry& frame : *frames) {
                             if (!frame.is_dir && frame.path.extension() == ".png") {
-#ifdef YATAIDON_PLATFORM_PS5
-                                if (gpu_asset_cache().get(frame.path.string())) continue;
-#endif
+                                if (gpu_asset_cache().get(frame.path.string())) {
+                                    continue;
+                                }
                                 groups[g].push_back(frame.path);
                             }
                         }
                     }
                 } else if (p.extension() == ".png") {
-#ifdef YATAIDON_PLATFORM_PS5
-                    if (gpu_asset_cache().get(p.string())) continue;
-#endif
+                    if (gpu_asset_cache().get(p.string())) {
+                        continue;
+                    }
                     groups[g].push_back(p);
                 }
             }

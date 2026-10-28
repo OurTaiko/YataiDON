@@ -16,6 +16,7 @@
 #include "libs/network/network.h"
 #include "libs/network/skin_updater.h"
 #include "libs/parsers/song_parser.h"
+#include "libs/asset_cache.h"
 #include "libs/profiler.h"
 #include "libs/screen.h"
 #include "libs/video/webcam.h"
@@ -478,6 +479,7 @@ static void run_frame() {
     sync_text_input();
 
     if (!next_screen.has_value() && debug_menu.requested_screen.has_value()) {
+        clear_asset_caches(); // a debug jump re-reads the skin from disk, so edits show up
         next_screen = screen->on_screen_end(debug_menu.requested_screen.value());
         debug_menu.requested_screen.reset();
     }

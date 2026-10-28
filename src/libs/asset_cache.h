@@ -4,10 +4,50 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
+
+#include "../platform/platform.h"
+
+// Every AssetCache registers here so a skin reload can drop them all at once.
+class AssetCacheBase {
+public:
+    virtual void clear() = 0;
+
+protected:
+    AssetCacheBase() {
+        std::lock_guard lock(registry_mutex());
+        registry().push_back(this);
+    }
+    ~AssetCacheBase() = default;
+
+private:
+    static std::mutex& registry_mutex() {
+        static std::mutex mutex;
+        return mutex;
+    }
+    static std::vector<AssetCacheBase*>& registry() {
+        static std::vector<AssetCacheBase*> caches;
+        return caches;
+    }
+    friend void clear_asset_caches();
+};
+
+// Drops everything retained by every cache. Call while the GPU context is alive.
+inline void clear_asset_caches() {
+    std::lock_guard lock(AssetCacheBase::registry_mutex());
+    for (AssetCacheBase* cache : AssetCacheBase::registry()) {
+        cache->clear();
+    }
+}
+
+// Bytes a cache may retain: `bytes` where the platform keeps assets between screens, else 0.
+inline size_t asset_cache_budget(size_t bytes) {
+    return platform_retains_assets() ? bytes : 0;
+}
 
 // Thread-safe, byte-bounded retention. Eviction releases only the cache's
-// reference; an asset currently used by a scene stays alive.
-template<class T> class AssetCache {
+// reference; an asset currently used by a scene stays alive. A zero budget retains nothing.
+template<class T> class AssetCache : public AssetCacheBase {
     struct Entry {
         std::shared_ptr<T> value;
         size_t bytes;
@@ -20,6 +60,7 @@ template<class T> class AssetCache {
     const size_t budget;
 public:
     explicit AssetCache(size_t budget) : budget(budget) {}
+    bool enabled() const { return budget > 0; }
     std::shared_ptr<T> get(const std::string& key) {
         std::lock_guard lock(mutex);
         auto it = entries.find(key);
@@ -46,7 +87,7 @@ public:
         entries.emplace(key, Entry{std::move(value), bytes, order.begin()});
         used += bytes;
     }
-    void clear() {
+    void clear() override {
         std::lock_guard lock(mutex);
         entries.clear();
         order.clear();
