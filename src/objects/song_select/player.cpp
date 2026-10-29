@@ -459,8 +459,8 @@ SongSelectState SongSelectPlayer::handle_input_selecting() {
             } else if (selected_difficulty >= Difficulty::EASY) {
                 voice_played = true;
                 start_background_diffs();
-                audio.play_player_sound("voice_start_song_" + std::to_string(static_cast<int>(player_num)) + "p", player_num,
-                                 VolumePreset::VOICE);
+                audio.play_player_sound("voice_start_song_" + std::to_string(static_cast<int>(player_num)) + "p",
+                                        player_num, VolumePreset::VOICE);
             } else if (selected_difficulty == Difficulty::BACK) {
                 is_ready = true;
             }

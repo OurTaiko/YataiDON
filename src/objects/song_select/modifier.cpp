@@ -63,7 +63,8 @@ ModifierSelector::ModifierSelector(PlayerNum player_num, PlayerData* player) : p
     move_sideways = dynamic_cast<MoveAnimation*>(tex.get_animation(31, true));
     fade_sideways = dynamic_cast<FadeAnimation*>(tex.get_animation(32, true));
 
-    audio.play_player_sound("voice_options_" + std::to_string(static_cast<int>(player_num)) + "p", player_num, VolumePreset::VOICE);
+    audio.play_player_sound("voice_options_" + std::to_string(static_cast<int>(player_num)) + "p", player_num,
+                            VolumePreset::VOICE);
 }
 
 ModifierSelector::~ModifierSelector() {

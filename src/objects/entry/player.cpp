@@ -206,8 +206,8 @@ void EntryPlayer::handle_input() {
             chara_index = -1;
             chara_pick_stage = CostumePickStage::NONE;
             if (parsed) {
-                audio.play_player_sound("costume_select_" + std::to_string(static_cast<int>(player_num)) + "p", player_num,
-                                 VolumePreset::VOICE);
+                audio.play_player_sound("costume_select_" + std::to_string(static_cast<int>(player_num)) + "p",
+                                        player_num, VolumePreset::VOICE);
                 chara->set_anim(AnimIndex::DON_BALLOON_SUCCESS);
             }
         }

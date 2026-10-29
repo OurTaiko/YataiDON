@@ -1,18 +1,19 @@
 #include "platform_ps5.h"
-#include "platform.h"
-#include "../libs/gfx/sdl_compat.h"
-#include "../libs/gfx.h"
+
 #include <algorithm>
 #include <array>
-#include <stdexcept>
 #include <cstdio>
 #include <cstdlib>
+#include <spdlog/spdlog.h>
+#include <stdexcept>
 
-#include "ps5_video.h"
 #include "../../ps5/native-ime.h"
 #include "../libs/file/config.h"
+#include "../libs/gfx.h"
+#include "../libs/gfx/sdl_compat.h"
 #include "../libs/global_data.h"
-#include <spdlog/spdlog.h>
+#include "platform.h"
+#include "ps5_video.h"
 
 extern "C" int sceSystemServiceHideSplashScreen();
 extern "C" int sceKernelDebugOutText(int channel, const char* text);
@@ -50,18 +51,21 @@ void ps5_init_window(int refresh_hz) {
     // RADV otherwise defaults to the installed application's /app0 directory.
     constexpr const char* shader_cache = "/data/YataiDON/radv-shader-cache";
     std::filesystem::create_directories(shader_cache);
-    if (setenv("MESA_SHADER_CACHE_DIR", shader_cache, 1) != 0)
+    if (setenv("MESA_SHADER_CACHE_DIR", shader_cache, 1) != 0) {
         throw std::runtime_error("PS5 RADV shader cache configuration failed");
+    }
     std::fprintf(stderr, "[yataidon-ps5] RADV shader cache: %s\n", shader_cache);
 
     ps5_preload_video_decoder();
     av_log_set_level(16);
     SDL_SetMainReady();
-    if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) < 0)
+    if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) < 0) {
         throw std::runtime_error(SDL_GetError());
+    }
     int width = 0, height = 0;
-    if (yataidon_ps5_display_size(&width, &height) != 0 || width <= 0 || height <= 0)
+    if (yataidon_ps5_display_size(&width, &height) != 0 || width <= 0 || height <= 0) {
         throw std::runtime_error("PS5 Vulkan display discovery failed");
+    }
     init_window(width, height, "YataiDON");
     begin_drawing();
     clear_background(Color::BLACK);
@@ -69,13 +73,17 @@ void ps5_init_window(int refresh_hz) {
     swap_screen_buffer();
     sceSystemServiceHideSplashScreen();
     const int accepted = ps5_apply_output_refresh(refresh_hz);
-    if (accepted < 0) std::fprintf(stderr, "[yataidon-ps5] Vulkan refresh request failed; retaining 60 Hz\n");
+    if (accepted < 0) {
+        std::fprintf(stderr, "[yataidon-ps5] Vulkan refresh request failed; retaining 60 Hz\n");
+    }
 }
 
 int ps5_apply_output_refresh(int refresh_hz) {
     // The native bridge owns VideoOut and validates HDMI 120 Hz capability.
     const int accepted = ps5_set_output_refresh ? ps5_set_output_refresh(refresh_hz) : -1;
-    if (accepted > 0) output_refresh = accepted;
+    if (accepted > 0) {
+        output_refresh = accepted;
+    }
     return accepted;
 }
 
@@ -114,22 +122,24 @@ int platform_apply_target_fps(int fps) {
 
 // DualSense drum layout (raylib gamepad button numbers).
 namespace ps5_controls {
-inline constexpr std::array left_ka{1, 4, 9, 10};
-inline constexpr std::array left_don{2, 3, 16};
-inline constexpr std::array right_ka{5, 6, 11, 12};
-inline constexpr std::array right_don{7, 8, 17};
-template<class Layout>
-bool apply_default_layout_if_empty(Layout& layout) {
-    if (!layout.left_kat.empty() || !layout.left_don.empty() ||
-        !layout.right_kat.empty() || !layout.right_don.empty()) return false;
-    layout.left_kat.assign(left_ka.begin(), left_ka.end());
-    layout.left_don.assign(left_don.begin(), left_don.end());
-    layout.right_kat.assign(right_ka.begin(), right_ka.end());
-    layout.right_don.assign(right_don.begin(), right_don.end());
-    return true;
-}
+    inline constexpr std::array left_ka{1, 4, 9, 10};
+    inline constexpr std::array left_don{2, 3, 16};
+    inline constexpr std::array right_ka{5, 6, 11, 12};
+    inline constexpr std::array right_don{7, 8, 17};
+    template<class Layout>
+    bool apply_default_layout_if_empty(Layout& layout) {
+        if (!layout.left_kat.empty() || !layout.left_don.empty() || !layout.right_kat.empty() ||
+            !layout.right_don.empty()) {
+            return false;
+        }
+        layout.left_kat.assign(left_ka.begin(), left_ka.end());
+        layout.left_don.assign(left_don.begin(), left_don.end());
+        layout.right_kat.assign(right_ka.begin(), right_ka.end());
+        layout.right_don.assign(right_don.begin(), right_don.end());
+        return true;
+    }
 
-}
+} // namespace ps5_controls
 
 void platform_load_config(Config& config, const toml::table& file) {
     // Apply the requested DualSense layout once; retain later rebindings.
@@ -157,8 +167,8 @@ void platform_save_config(const Config&, toml::table& out) {
 
 bool platform_offers_setting(std::string_view path, std::string_view value) {
     if (path == "video/vsync" || path == "video/fullscreen" || path == "video/borderless" ||
-        path == "keys/fullscreen_key" || path == "keys/borderless_key" ||
-        path == "audio/device" || path == "audio/device_type" || path == "audio/sample_rate") {
+        path == "keys/fullscreen_key" || path == "keys/borderless_key" || path == "audio/device" ||
+        path == "audio/device_type" || path == "audio/sample_rate") {
         return false;
     }
     // The display runs at 60 or 120 Hz (120 needs a compatible display).

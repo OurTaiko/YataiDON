@@ -12,9 +12,9 @@
 #include <unordered_set>
 
 #include "../../platform/platform.h"
+#include "../../platform/platform_windows.h"
 #include "../asset_cache.h"
 #include "../gfx.h"
-#include "../../platform/platform_windows.h"
 
 void set_working_directory_to_executable() {
     const std::filesystem::path exe_dir = platform_get_working_directory();

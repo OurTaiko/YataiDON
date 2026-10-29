@@ -1842,7 +1842,8 @@ void Player::handle_input(double ms_from_start, double current_ms, std::optional
                 (log_type == InputLogType::DON_L || log_type == InputLogType::DON_R) ? DrumType::DON : DrumType::KAT;
             Side side = (log_type == InputLogType::DON_L || log_type == InputLogType::KAT_L) ? Side::LEFT : Side::RIGHT;
             spawn_hit_effects(drum_type, side);
-            audio.play_player_sound(drum_type == DrumType::DON ? don_hitsound : kat_hitsound, player_num, VolumePreset::HITSOUND);
+            audio.play_player_sound(drum_type == DrumType::DON ? don_hitsound : kat_hitsound, player_num,
+                                    VolumePreset::HITSOUND);
             check_note(log_ms, drum_type, current_ms, background);
             ++replay_cursor;
         }

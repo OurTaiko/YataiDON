@@ -47,7 +47,8 @@ inline size_t asset_cache_budget(size_t bytes) {
 
 // Thread-safe, byte-bounded retention. Eviction releases only the cache's
 // reference; an asset currently used by a scene stays alive. A zero budget retains nothing.
-template<class T> class AssetCache : public AssetCacheBase {
+template<class T>
+class AssetCache : public AssetCacheBase {
     struct Entry {
         std::shared_ptr<T> value;
         size_t bytes;
@@ -58,13 +59,16 @@ template<class T> class AssetCache : public AssetCacheBase {
     std::unordered_map<std::string, Entry> entries;
     size_t used = 0;
     const size_t budget;
+
 public:
     explicit AssetCache(size_t budget) : budget(budget) {}
     bool enabled() const { return budget > 0; }
     std::shared_ptr<T> get(const std::string& key) {
         std::lock_guard lock(mutex);
         auto it = entries.find(key);
-        if (it == entries.end()) return {};
+        if (it == entries.end()) {
+            return {};
+        }
         order.splice(order.begin(), order, it->second.age);
         return it->second.value;
     }
@@ -76,7 +80,9 @@ public:
             order.erase(old->second.age);
             entries.erase(old);
         }
-        if (!value || bytes > budget) return;
+        if (!value || bytes > budget) {
+            return;
+        }
         while (used > budget - bytes && !order.empty()) {
             auto it = entries.find(order.back());
             used -= it->second.bytes;

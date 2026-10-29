@@ -1,5 +1,4 @@
 #include "chara_3d.h"
-#include "../../platform/platform.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +15,7 @@
 #include "../../libs/gfx.h"
 #include "../../libs/gfx/camera_utils.h"
 #include "../../libs/math/animation.h"
+#include "../../platform/platform.h"
 
 static void draw_model_face_last(Model& model, int face_material_index, const std::vector<int>& blend_materials,
                                  const std::vector<int>& twosided_materials, Vec3 position, float scale) {

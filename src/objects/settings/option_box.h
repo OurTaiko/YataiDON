@@ -76,7 +76,6 @@ public:
     void draw() override;
 };
 
-
 class StrOptionBox : public BaseOptionBox {
     std::string value;
     std::string input_string; // used for free-form editing

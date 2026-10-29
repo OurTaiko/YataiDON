@@ -36,7 +36,7 @@ NeiroSelector::NeiroSelector(PlayerNum player_num, PlayerData* player) : player_
     selected_sound = std::clamp(selected_sound, 0, static_cast<int>(sounds.size()) - 1);
     load_sound();
     audio.play_player_sound("voice_hitsound_select_" + std::to_string(static_cast<int>(player_num)) + "p", player_num,
-                     VolumePreset::VOICE);
+                            VolumePreset::VOICE);
 
     move = dynamic_cast<MoveAnimation*>(tex.get_animation(28, true));
     move_out = tex.has_animation(43) ? dynamic_cast<MoveAnimation*>(tex.get_animation(43, true)) : nullptr;

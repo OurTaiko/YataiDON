@@ -47,7 +47,9 @@ public:
 
     SongBox(const fs::path& path, const BoxDef& box_def, SongParser parser);
     ~SongBox() override {
-        if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
+        if (preview_load) {
+            preview_load->cancelled.store(true, std::memory_order_relaxed);
+        }
         release_preview_slot();
         if (preimage.has_value()) {
             unload_texture(preimage.value());

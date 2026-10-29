@@ -1,9 +1,8 @@
 // platform.h hooks that only some platforms (currently PS5) override; every other build uses these.
-#include "platform.h"
-
 #include "../libs/file/config.h"
 #include "../libs/gfx.h"
 #include "../libs/input/ime_ui.h"
+#include "platform.h"
 
 int platform_run_main(int (*game_main)(int, char**), int argc, char** argv) {
     return game_main(argc, argv);

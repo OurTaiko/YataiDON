@@ -1,9 +1,9 @@
 #include "audio.h"
-#include "../atomic_ref_compat.h"
 
 #include "../../platform/platform_ios.h"
 #include "../../platform/platform_windows.h"
 #include "../asset_cache.h"
+#include "../atomic_ref_compat.h"
 #include "../profiler.h"
 #include "loudness.h"
 #include "spdlog/spdlog.h"
@@ -49,7 +49,9 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
     AVFormatContext* fmt = nullptr;
     if (cancelled) {
         fmt = avformat_alloc_context();
-        if (!fmt) return false;
+        if (!fmt) {
+            return false;
+        }
         fmt->interrupt_callback.callback = [](void* flag) -> int {
             return static_cast<const std::atomic<bool>*>(flag)->load(std::memory_order_relaxed) ? 1 : 0;
         };
@@ -95,7 +97,9 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
     SwrContext* swr = nullptr;
     // Keep mono sources mono, like the libsndfile path; the mixer pans them.
     AVChannelLayout out_layout = AV_CHANNEL_LAYOUT_STEREO;
-    if (dec->ch_layout.nb_channels == 1) out_layout = AV_CHANNEL_LAYOUT_MONO;
+    if (dec->ch_layout.nb_channels == 1) {
+        out_layout = AV_CHANNEL_LAYOUT_MONO;
+    }
     int out_ch = out_layout.nb_channels;
     const int output_rate = requested_rate ? int(requested_rate) : dec->sample_rate;
     if (swr_alloc_set_opts2(&swr, &out_layout, AV_SAMPLE_FMT_FLT, output_rate, &dec->ch_layout, dec->sample_fmt,
@@ -116,7 +120,9 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
     std::vector<float> pcm;
     if (fmt->duration > 0) {
         const double estimate = double(fmt->duration) / AV_TIME_BASE * output_rate * out_ch;
-        if (estimate > 0 && estimate < (32u << 20) / sizeof(float)) pcm.reserve(size_t(estimate));
+        if (estimate > 0 && estimate < (32u << 20) / sizeof(float)) {
+            pcm.reserve(size_t(estimate));
+        }
     }
     std::vector<float> conversion;
     AVPacket* pkt = av_packet_alloc();
@@ -140,8 +146,13 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
                 break;
             }
             int64_t n = swr_get_out_samples(swr, frm->nb_samples);
-            if (n <= 0) { av_frame_unref(frm); continue; }
-            if (conversion.size() < size_t(n) * out_ch) conversion.resize(size_t(n) * out_ch);
+            if (n <= 0) {
+                av_frame_unref(frm);
+                continue;
+            }
+            if (conversion.size() < size_t(n) * out_ch) {
+                conversion.resize(size_t(n) * out_ch);
+            }
             uint8_t* op = (uint8_t*)conversion.data();
             int got = swr_convert(swr, &op, (int)n, (const uint8_t**)frm->extended_data, frm->nb_samples);
             if (got > 0) {
@@ -171,7 +182,9 @@ static bool ffmpeg_decode_float(const char* path, float** out_data, sf_count_t* 
     for (;;) {
         uint8_t* output = reinterpret_cast<uint8_t*>(conversion.data());
         int got = swr_convert(swr, &output, 4096, nullptr, 0);
-        if (got <= 0) break;
+        if (got <= 0) {
+            break;
+        }
         pcm.insert(pcm.end(), conversion.begin(), conversion.begin() + got * out_ch);
     }
 
@@ -365,7 +378,6 @@ std::vector<std::string> enumerate_audio_devices(int device_type) {
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
     return names;
-
 }
 
 AudioEngine::~AudioEngine() {
@@ -432,8 +444,8 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
             if (channel >= 0) {
                 // Preserve both source channels when folding a stereo effect
                 // into its player's channel; do not drop half of the recording.
-                const float mono = channels == 1 ? data_ptr[src_index] :
-                                   0.5f * (data_ptr[src_index] + data_ptr[src_index + 1]);
+                const float mono =
+                    channels == 1 ? data_ptr[src_index] : 0.5f * (data_ptr[src_index] + data_ptr[src_index + 1]);
                 left = channel == 0 ? mono : 0.0f;
                 right = channel == 1 ? mono : 0.0f;
             } else if (channels == 1) {
@@ -479,8 +491,7 @@ void AudioEngine::mix(float* out, unsigned int framesPerBuffer, AudioEngine* eng
         }
 
         yd::atomic_ref<unsigned long long> aref_frame(mus.current_frame);
-        const float volume =
-            yd::atomic_ref<float>(mus.volume).load(std::memory_order_relaxed) * mus.normalization_gain;
+        const float volume = yd::atomic_ref<float>(mus.volume).load(std::memory_order_relaxed) * mus.normalization_gain;
         const float pan = yd::atomic_ref<float>(mus.pan).load(std::memory_order_relaxed);
 
         unsigned long frames_to_process = framesPerBuffer;
@@ -897,9 +908,10 @@ bool AudioEngine::init_audio_device(const fs::path& sounds_path, const AudioConf
     this->is_ready = false;
     this->master_volume = 1.0f;
     try {
-        platform_audio = platform_open_audio(
-            [](float* out, unsigned int frames, void* context) { mix(out, frames, static_cast<AudioEngine*>(context)); },
-            this, target_sample_rate, buffer_size);
+        platform_audio =
+            platform_open_audio([](float* out, unsigned int frames,
+                                   void* context) { mix(out, frames, static_cast<AudioEngine*>(context)); },
+                                this, target_sample_rate, buffer_size);
         if (platform_audio) {
             is_ready = true;
             return true;
@@ -1133,7 +1145,7 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
             const auto ext = file_path.extension().string();
             if (ext == ".wav" || ext == ".aif" || ext == ".aiff")
 #endif
-            file = sf_open(path_str.c_str(), SFM_READ, &file_info);
+                file = sf_open(path_str.c_str(), SFM_READ, &file_info);
         }
 
         if (!file) {
@@ -1235,8 +1247,8 @@ std::string AudioEngine::load_sound(const fs::path& file_path, const std::string
             snd.sample_rate = target_sample_rate;
         }
 
-            snd.normalization_gain = loaded_sound_gain(file_path, name);
-            install_sound(snd);
+        snd.normalization_gain = loaded_sound_gain(file_path, name);
+        install_sound(snd);
 
         spdlog::debug("Loaded sound: {} ({} frames, {} Hz, {} channels)", name, snd.frame_count, snd.sample_rate,
                       snd.channels);
@@ -1279,7 +1291,10 @@ void AudioEngine::load_screen_sounds(const std::string& screen_name) {
                 for (const auto& entry : fs::directory_iterator(dir)) {
                     if (entry.is_directory()) {
                         for (const auto& file : fs::directory_iterator(entry.path())) {
-                            if (file.is_regular_file()) want(file.path(), entry.path().stem().string() + "_" + file.path().stem().string(), true);
+                            if (file.is_regular_file()) {
+                                want(file.path(), entry.path().stem().string() + "_" + file.path().stem().string(),
+                                     true);
+                            }
                         }
                     } else if (entry.is_regular_file()) {
                         want(entry.path(), entry.path().stem().string(), true);
@@ -1434,7 +1449,9 @@ thread_local int PlayerSoundScope::current = 0;
 PlayerSoundScope::PlayerSoundScope(PlayerNum player) : previous(current) {
     current = static_cast<int>(player);
 }
-PlayerSoundScope::~PlayerSoundScope() { current = previous; }
+PlayerSoundScope::~PlayerSoundScope() {
+    current = previous;
+}
 
 void AudioEngine::set_two_player_mode(bool enabled) {
     std::unique_lock guard(rw_lock);
@@ -1453,16 +1470,24 @@ int AudioEngine::sound_player(const std::string& name, VolumePreset preset) cons
         return -1;
     }
     const int player = PlayerSoundScope::player();
-    if (player == 1 || player == 2) return player - 1;
+    if (player == 1 || player == 2) {
+        return player - 1;
+    }
     // Existing skins also identify player-specific announcements by name.
-    if (name.ends_with("_1p")) return 0;
-    if (name.ends_with("_2p")) return 1;
+    if (name.ends_with("_1p")) {
+        return 0;
+    }
+    if (name.ends_with("_2p")) {
+        return 1;
+    }
     return -1;
 }
 
 std::array<SoundPlayback*, 3> AudioEngine::sound_playbacks(sound& sample, const std::string& name) {
     const int player = sound_player(name);
-    if (player >= 0) return {&sample.player_playback[player], nullptr, nullptr};
+    if (player >= 0) {
+        return {&sample.player_playback[player], nullptr, nullptr};
+    }
     return {&sample, &sample.player_playback[0], &sample.player_playback[1]};
 }
 
@@ -1506,10 +1531,12 @@ void AudioEngine::stop_sound(const std::string& name) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        for (auto* voice : sound_playbacks(it->second, name)) if (voice) {
-            yd::atomic_ref<bool>(voice->is_playing).store(false, std::memory_order_relaxed);
-            yd::atomic_ref<unsigned int>(voice->current_frame).store(0, std::memory_order_relaxed);
-            yd::atomic_ref<float>(voice->frame_frac).store(0.0f, std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(it->second, name)) {
+            if (voice) {
+                yd::atomic_ref<bool>(voice->is_playing).store(false, std::memory_order_relaxed);
+                yd::atomic_ref<unsigned int>(voice->current_frame).store(0, std::memory_order_relaxed);
+                yd::atomic_ref<float>(voice->frame_frac).store(0.0f, std::memory_order_relaxed);
+            }
         }
     } else {
         spdlog::warn("Sound {} not found", name);
@@ -1532,8 +1559,11 @@ bool AudioEngine::is_sound_playing(const std::string& name) {
     std::shared_lock<std::shared_mutex> guard(rw_lock);
     auto it = sounds.find(name);
     if (it != sounds.end()) {
-        for (auto* voice : sound_playbacks(it->second, name))
-            if (voice && yd::atomic_ref<bool>(voice->is_playing).load(std::memory_order_relaxed)) return true;
+        for (auto* voice : sound_playbacks(it->second, name)) {
+            if (voice && yd::atomic_ref<bool>(voice->is_playing).load(std::memory_order_relaxed)) {
+                return true;
+            }
+        }
         return false;
     }
     spdlog::warn("Sound {} not found", name);
@@ -1590,8 +1620,8 @@ float AudioEngine::get_sound_time_played(const std::string& name) const {
     auto it = sounds.find(name);
     if (it != sounds.end()) {
         const int player = sound_player(name);
-        const SoundPlayback& voice = player < 0 ? static_cast<const SoundPlayback&>(it->second)
-                                                : it->second.player_playback[player];
+        const SoundPlayback& voice =
+            player < 0 ? static_cast<const SoundPlayback&>(it->second) : it->second.player_playback[player];
         unsigned int frame = yd::atomic_ref<unsigned int>(const_cast<unsigned int&>(voice.current_frame))
                                  .load(std::memory_order_relaxed);
         return static_cast<float>(frame) / static_cast<float>(target_sample_rate);
@@ -1617,9 +1647,12 @@ void AudioEngine::seek_sound(const std::string& name, float position) {
         sound& snd = it->second;
         unsigned int frame =
             static_cast<unsigned int>(std::max(position, 0.0f) * static_cast<float>(target_sample_rate));
-        for (auto* voice : sound_playbacks(snd, name)) if (voice) {
-            yd::atomic_ref<unsigned int>(voice->current_frame).store(std::min(frame, snd.frame_count), std::memory_order_relaxed);
-            yd::atomic_ref<float>(voice->frame_frac).store(0.0f, std::memory_order_relaxed);
+        for (auto* voice : sound_playbacks(snd, name)) {
+            if (voice) {
+                yd::atomic_ref<unsigned int>(voice->current_frame)
+                    .store(std::min(frame, snd.frame_count), std::memory_order_relaxed);
+                yd::atomic_ref<float>(voice->frame_frac).store(0.0f, std::memory_order_relaxed);
+            }
         }
     } else {
         spdlog::warn("Sound {} not found", name);
@@ -1663,12 +1696,16 @@ bool AudioEngine::prepare_music_pcm(const fs::path& file_path, PreparedPCM& out,
     (void)cancelled;
     return false;
 #else
-    if (cancelled.load(std::memory_order_relaxed)) return false;
+    if (cancelled.load(std::memory_order_relaxed)) {
+        return false;
+    }
     float* data = nullptr;
     sf_count_t frames = 0;
     unsigned rate = 0, channels = 0;
-    if (!ffmpeg_decode_float(path_to_string(file_path).c_str(), &data, &frames, &rate, &channels, static_cast<unsigned int>(target_sample_rate), &cancelled))
+    if (!ffmpeg_decode_float(path_to_string(file_path).c_str(), &data, &frames, &rate, &channels,
+                             static_cast<unsigned int>(target_sample_rate), &cancelled)) {
         return false;
+    }
     out.data.reset(data);
     out.frames = static_cast<unsigned>(frames);
     out.rate = rate;
@@ -1697,7 +1734,8 @@ std::string AudioEngine::load_music_stream_prepared(PreparedPCM&& pcm, const std
         std::unique_lock<std::shared_mutex> guard(rw_lock);
         music_streams[name] = mus;
     }
-    spdlog::info("Loaded prepared music stream: {} ({} frames, {} Hz, {} ch)", name, pcm.frames, pcm.rate, pcm.channels);
+    spdlog::info("Loaded prepared music stream: {} ({} frames, {} Hz, {} ch)", name, pcm.frames, pcm.rate,
+                 pcm.channels);
     return name;
 }
 

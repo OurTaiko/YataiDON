@@ -12,13 +12,13 @@
 #include <thread>
 
 #include "../../platform/platform_windows.h"
+#include "../asset_cache.h"
 #include "../file/filesystem.h"
 #include "../file/script.h"
 #include "../gfx.h"
 #include "../global_data.h"
 #include "../profiler.h"
 #include "text.h"
-#include "../asset_cache.h"
 
 // Uploaded textures by PNG path, kept across screens (with their alpha border).
 struct CachedGPUTexture {

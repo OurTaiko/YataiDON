@@ -3,9 +3,9 @@
 #include <string_view>
 #include <utility>
 
+#include "../../../libs/color_shader.h"
 #include "../../../libs/gfx/text.h"
 #include "color_utils.h"
-#include "../../../libs/color_shader.h"
 
 BaseBox::BaseBox(fs::path path, const BoxDef& box_def)
     : path(std::move(path)), texture_index(box_def.texture_index), genre_index(box_def.genre_index),

@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "libs/asset_cache.h"
 #include "libs/audio/audio.h"
 #include "libs/file/filesystem.h"
 #include "libs/file/logging.h"
@@ -16,7 +17,6 @@
 #include "libs/network/network.h"
 #include "libs/network/skin_updater.h"
 #include "libs/parsers/song_parser.h"
-#include "libs/asset_cache.h"
 #include "libs/profiler.h"
 #include "libs/screen.h"
 #include "libs/video/webcam.h"

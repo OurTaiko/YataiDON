@@ -3,10 +3,10 @@
 #include <climits>
 #include <spdlog/spdlog.h>
 
-#include "../audio/audio.h"
-#include "../profiler.h"
-#include "../gfx/texture.h"
 #include "../../platform/platform.h"
+#include "../audio/audio.h"
+#include "../gfx/texture.h"
+#include "../profiler.h"
 
 VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
     source_path = path;
@@ -25,41 +25,42 @@ VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
 #ifndef __EMSCRIPTEN__
     is_finished_arr = {true, true};
     try {
-    container = av::AVContainer::open(path);
-    if (!container) {
-        spdlog::error("Failed to open video: {}", path.string());
-        return;
-    }
-    try {
-        video_stream = container->streams().video(0);
-    } catch (const std::exception& e) {
-        spdlog::error("Video has no video stream: {} ({})", path.string(), e.what());
-        container.reset();
-        return;
-    }
-    audio_stream = container->streams().audio(0);
-    if (!video_stream) {
-        spdlog::error("Video has no video stream: {}", path.string());
-        container.reset();
-        return;
-    }
+        container = av::AVContainer::open(path);
+        if (!container) {
+            spdlog::error("Failed to open video: {}", path.string());
+            return;
+        }
+        try {
+            video_stream = container->streams().video(0);
+        } catch (const std::exception& e) {
+            spdlog::error("Video has no video stream: {} ({})", path.string(), e.what());
+            container.reset();
+            return;
+        }
+        audio_stream = container->streams().audio(0);
+        if (!video_stream) {
+            spdlog::error("Video has no video stream: {}", path.string());
+            container.reset();
+            return;
+        }
 
-    if (audio_stream) {
-        audio_s = audio.load_music_stream_memory(*audio_stream, "video_player");
-    } else {
-        is_finished_arr[1] = true; // no audio track: audio side is trivially done
-    }
+        if (audio_stream) {
+            audio_s = audio.load_music_stream_memory(*audio_stream, "video_player");
+        } else {
+            is_finished_arr[1] = true; // no audio track: audio side is trivially done
+        }
 
-    fps = video_stream->average_rate().value_or(0.f);
+        fps = video_stream->average_rate().value_or(0.f);
 
-    duration =
-        (container->duration() > 0) ? static_cast<double>(container->duration()) / av::AVContainer::time_base() : 0.0;
+        duration = (container->duration() > 0)
+                       ? static_cast<double>(container->duration()) / av::AVContainer::time_base()
+                       : 0.0;
 
-    frame_count = (fps > 0.f) ? static_cast<int>(duration * fps) + 1 : 0;
+        frame_count = (fps > 0.f) ? static_cast<int>(duration * fps) + 1 : 0;
 
-    frame_index = 0;
-    frame_duration = (fps > 0.f) ? 1000.0 / fps : 0.0;
-    is_finished_arr = {false, !audio_stream};
+        frame_index = 0;
+        frame_duration = (fps > 0.f) ? 1000.0 / fps : 0.0;
+        is_finished_arr = {false, !audio_stream};
     } catch (const std::exception& error) {
         spdlog::error("Skipping video {}: {}", path.string(), error.what());
         video_stream.reset();
@@ -111,20 +112,27 @@ void VideoPlayer::decode_loop() {
             }
             if (hardware) {
                 try {
-                    if (!hardware->next(frame.bytes, frame.width, frame.height)) break;
+                    if (!hardware->next(frame.bytes, frame.width, frame.height)) {
+                        break;
+                    }
                 } catch (const std::exception& error) {
-                    spdlog::warn("Hardware video failed at frame {}: {}; switching to software", produced, error.what());
+                    spdlog::warn("Hardware video failed at frame {}: {}; switching to software", produced,
+                                 error.what());
                     hardware.reset();
                     // The software decoder has not consumed packets yet. Catch
                     // it up so fallback neither repeats frames nor restarts audio.
                     for (int i = 0; i < produced && !decode_stop.load(); ++i) {
-                        if (!frame_generator->next(current_decoded_frame)) break;
+                        if (!frame_generator->next(current_decoded_frame)) {
+                            break;
+                        }
                         current_decoded_frame.reset();
                     }
                     continue;
                 }
             } else {
-                if (!frame_generator->next(current_decoded_frame)) break;
+                if (!frame_generator->next(current_decoded_frame)) {
+                    break;
+                }
                 current_decoded_frame->to_rgba(sws, frame.bytes);
                 frame.width = current_decoded_frame->width();
                 frame.height = current_decoded_frame->height();
@@ -311,7 +319,9 @@ void VideoPlayer::draw() {
 void VideoPlayer::stop() {
     stop_decode_thread();
     for (auto& spare : upload_spares) {
-        if (spare) unload_texture(*spare);
+        if (spare) {
+            unload_texture(*spare);
+        }
         spare.reset();
     }
     upload_slot = 0;

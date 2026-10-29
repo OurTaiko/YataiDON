@@ -12,6 +12,7 @@ class PS5HardwareVideo : public PlatformVideoDecoder {
     struct Impl;
     std::unique_ptr<Impl> impl;
     explicit PS5HardwareVideo(std::unique_ptr<Impl> value);
+
 public:
     ~PS5HardwareVideo() override;
     static std::unique_ptr<PS5HardwareVideo> open(const std::filesystem::path&, const std::atomic<bool>& stop);

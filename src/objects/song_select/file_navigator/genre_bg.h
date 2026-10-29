@@ -6,8 +6,7 @@
 class GenreBG {
 public:
     GenreBG(const std::string& text_name, std::optional<Color> color, TextureIndex texture_index, float distance);
-    ~GenreBG() {
-    }
+    ~GenreBG() {}
 
     void update(double current_ms, FolderBox* box);
     void exit(float left_position, float right_position, FolderBox* center_box);

@@ -1,4 +1,5 @@
 #include "genre_bg.h"
+
 #include "../../../libs/color_shader.h"
 
 GenreBG::GenreBG(const std::string& text_name, std::optional<Color> color, TextureIndex texture_index, float distance)

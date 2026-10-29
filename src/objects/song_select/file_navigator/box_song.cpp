@@ -5,9 +5,9 @@
 
 #include "../../../libs/audio/audio.h"
 #include "../../../libs/gfx/text.h"
-#include "navigator.h"
 #include "../../../libs/latest_worker.h"
 #include "../../../platform/platform.h"
+#include "navigator.h"
 
 // Decodes previews off the UI thread; a newer request replaces a pending one, never joined.
 static LatestWorker& preview_worker() {
@@ -98,7 +98,9 @@ std::string SongBox::hash_for(int difficulty) {
 }
 
 void SongBox::reset() {
-    if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
+    if (preview_load) {
+        preview_load->cancelled.store(true, std::memory_order_relaxed);
+    }
     BaseBox::reset();
     diff_fade_in = dynamic_cast<FadeAnimation*>(tex.get_animation(12));
     if (audio.is_music_stream_valid("preview")) {
@@ -244,7 +246,9 @@ void SongBox::release_preview_slot() {
 }
 
 void SongBox::close_box() {
-    if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
+    if (preview_load) {
+        preview_load->cancelled.store(true, std::memory_order_relaxed);
+    }
     BaseBox::close_box();
     box_opened_at = 0.0;
     preview_load.reset();

@@ -1,17 +1,17 @@
 #pragma once
 
+#include "../../platform/platform.h"
 #include "../file/config.h"
 #include "../gfx/sdl_compat.h"
 #include "../video/av.h"
-#include "../../platform/platform.h"
 #if defined(YATAIDON_HAS_RTAUDIO)
 #include <RtAudio.h>
 #endif
 #ifdef _WIN32
 #include <portaudio.h>
 #endif
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -45,12 +45,15 @@ struct VirtualFile {
 enum class PlayerNum;
 
 // Background music sounds ("bgm", "*_bgm") loop unless a caller says otherwise.
-inline bool is_bgm_sound(const std::string& name) { return name == "bgm" || name.ends_with("_bgm"); }
+inline bool is_bgm_sound(const std::string& name) {
+    return name == "bgm" || name.ends_with("_bgm");
+}
 
 // Player-owned callbacks (including skin Lua calls) inherit this audio owner.
 class PlayerSoundScope {
     int previous;
     static thread_local int current;
+
 public:
     explicit PlayerSoundScope(PlayerNum player);
     ~PlayerSoundScope();
@@ -69,15 +72,14 @@ struct SoundPlayback {
     float playback_gain = 1.0f;
     float pan = 0.5f;   // Stereo pan (0.0 = left, 0.5 = center, 1.0 = right)
     float pitch = 1.0f; // Pitch/speed multiplier (1.0 = normal)
-
 };
 
 struct sound : SoundPlayback {
     std::shared_ptr<float[]> cached_data; // owns `data` when shared with the asset cache
-    float* data = nullptr;        // Audio sample data (interleaved stereo or mono)
-    unsigned int frame_count = 0; // Total number of frames in the sound
-    unsigned int sample_rate = 0; // Original sample rate of the audio
-    unsigned int channels = 0;    // Number of channels (1 = mono, 2 = stereo)
+    float* data = nullptr;                // Audio sample data (interleaved stereo or mono)
+    unsigned int frame_count = 0;         // Total number of frames in the sound
+    unsigned int sample_rate = 0;         // Original sample rate of the audio
+    unsigned int channels = 0;            // Number of channels (1 = mono, 2 = stereo)
 
     float normalization_gain = 1.0f;
     // Independent cursors over the same immutable PCM, so simultaneous hits
@@ -144,8 +146,8 @@ public:
     void unload_all_sounds();
     void store_sound(const std::string& name, const sound& snd);
     void play_sound(const std::string& name, VolumePreset volume_preset = VolumePreset::NONE, float gain = 1.0f);
-    void play_player_sound(const std::string& name, PlayerNum player,
-                           VolumePreset preset = VolumePreset::NONE, float gain = 1.0f);
+    void play_player_sound(const std::string& name, PlayerNum player, VolumePreset preset = VolumePreset::NONE,
+                           float gain = 1.0f);
     void set_two_player_mode(bool enabled);
     bool has_sound(const std::string& name);
     void stop_sound(const std::string& name);

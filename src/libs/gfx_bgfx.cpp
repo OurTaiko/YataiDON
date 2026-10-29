@@ -711,7 +711,8 @@ int get_render_height() {
 int get_monitor_refresh_rate() {
 #ifdef YATAIDON_USE_SDL2
     SDL_DisplayMode storage{};
-    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(window), &storage) == 0 ? &storage : nullptr;
+    const SDL_DisplayMode* mode =
+        SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(window), &storage) == 0 ? &storage : nullptr;
 #else
     const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
 #endif
@@ -775,11 +776,15 @@ RenderTarget load_render_texture(int width, int height) {
     TextureSlot color;
     color.handle =
         bgfx::createTexture2D((uint16_t)width, (uint16_t)height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_RT);
-    bgfx::TextureHandle depth = bgfx::createTexture2D((uint16_t)width, (uint16_t)height, false, 1,
-                                                      depth_format, depth_flags);
+    bgfx::TextureHandle depth =
+        bgfx::createTexture2D((uint16_t)width, (uint16_t)height, false, 1, depth_format, depth_flags);
     if (!bgfx::isValid(color.handle) || !bgfx::isValid(depth)) {
-        if (bgfx::isValid(color.handle)) bgfx::destroy(color.handle);
-        if (bgfx::isValid(depth)) bgfx::destroy(depth);
+        if (bgfx::isValid(color.handle)) {
+            bgfx::destroy(color.handle);
+        }
+        if (bgfx::isValid(depth)) {
+            bgfx::destroy(depth);
+        }
         return {};
     }
     bgfx::Attachment att[2];
@@ -792,8 +797,8 @@ RenderTarget load_render_texture(int width, int height) {
         spdlog::warn("bgfx: failed to create {}x{} model framebuffer", width, height);
         return {};
     }
-    spdlog::info("bgfx: model framebuffer {}x{}, depth={}, handle={}",
-                 width, height, static_cast<int>(depth_format), t.fb.idx);
+    spdlog::info("bgfx: model framebuffer {}x{}, depth={}, handle={}", width, height, static_cast<int>(depth_format),
+                 t.fb.idx);
     t.color = add_slot(color);
 
     RenderTarget rt;

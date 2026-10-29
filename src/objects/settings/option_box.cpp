@@ -94,7 +94,6 @@ static std::string int_display(int v) {
     return std::to_string(v);
 }
 
-
 IntOptionBox::IntOptionBox(const std::string& name, const std::string& description, const std::string& path,
                            const std::map<std::string, std::string>& values)
     : BaseOptionBox(name, description, path), value(config_ref.get_int()), value_text(nullptr),

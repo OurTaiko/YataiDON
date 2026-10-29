@@ -1,6 +1,6 @@
 #include "background.h"
-#include "../../libs/audio/audio.h"
 
+#include "../../libs/audio/audio.h"
 #include "../../libs/file/script.h"
 
 Background::Background(PlayerNum player_num, float bpm, const std::string& scene_preset) {

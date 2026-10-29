@@ -342,7 +342,6 @@ std::optional<Screens> GameScreen::global_keys() {
         return on_screen_end(Screens::SONG_SELECT);
     }
 
-
     return std::nullopt;
 }
 

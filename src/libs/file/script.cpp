@@ -963,34 +963,34 @@ void ScriptManager::register_lua_bindings() {
 
     sol::table audio_tbl = lua.create_table();
 
-    audio_tbl.set_function(
-        "play_sound", [](const std::string& name, sol::optional<std::string> preset_str, sol::optional<bool> loop,
-                         sol::optional<int> player) {
-            struct NamedPreset {
-                std::string_view name;
-                VolumePreset preset;
-            };
+    audio_tbl.set_function("play_sound", [](const std::string& name, sol::optional<std::string> preset_str,
+                                            sol::optional<bool> loop, sol::optional<int> player) {
+        struct NamedPreset {
+            std::string_view name;
+            VolumePreset preset;
+        };
 
-            static constexpr NamedPreset presets[] = {
-                {"sound", VolumePreset::SOUND},
-                {"music", VolumePreset::MUSIC},
-                {"voice", VolumePreset::VOICE},
-                {"hitsound", VolumePreset::HITSOUND},
-                {"attract_mode", VolumePreset::ATTRACT_MODE},
-            };
+        static constexpr NamedPreset presets[] = {
+            {"sound", VolumePreset::SOUND},
+            {"music", VolumePreset::MUSIC},
+            {"voice", VolumePreset::VOICE},
+            {"hitsound", VolumePreset::HITSOUND},
+            {"attract_mode", VolumePreset::ATTRACT_MODE},
+        };
 
-            VolumePreset preset = VolumePreset::NONE;
-            if (preset_str) {
-                const auto match = std::ranges::find(presets, preset_str.value(), &NamedPreset::name);
-                if (match != std::end(presets)) {
-                    preset = match->preset;
-                }
+        VolumePreset preset = VolumePreset::NONE;
+        if (preset_str) {
+            const auto match = std::ranges::find(presets, preset_str.value(), &NamedPreset::name);
+            if (match != std::end(presets)) {
+                preset = match->preset;
             }
-            PlayerSoundScope audio_owner(preset == VolumePreset::MUSIC ? PlayerNum::ALL :
-                static_cast<PlayerNum>(player.value_or(PlayerSoundScope::player())));
-            audio.set_sound_loop(name, loop.value_or(is_bgm_sound(name)));
-            audio.play_sound(name, preset);
-        });
+        }
+        PlayerSoundScope audio_owner(preset == VolumePreset::MUSIC
+                                         ? PlayerNum::ALL
+                                         : static_cast<PlayerNum>(player.value_or(PlayerSoundScope::player())));
+        audio.set_sound_loop(name, loop.value_or(is_bgm_sound(name)));
+        audio.play_sound(name, preset);
+    });
 
     audio_tbl.set_function("stop_sound", [](const std::string& name) {
         audio.set_sound_loop(name, false);

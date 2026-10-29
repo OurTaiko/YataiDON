@@ -9,8 +9,8 @@
 #include <spdlog/spdlog.h>
 #include <vector>
 
-#include "../gfx.h"
 #include "../../platform/platform.h"
+#include "../gfx.h"
 
 // Static copies: the raylib backend links its own non-static stb_image.
 #define STB_IMAGE_STATIC

@@ -1,11 +1,12 @@
-#include "platform_ps5.h"
-#include <spdlog/spdlog.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <spdlog/spdlog.h>
 #include <thread>
 #include <vector>
+
+#include "platform_ps5.h"
 
 extern "C" {
 int sceAudioOutInit();
@@ -21,7 +22,9 @@ struct PlatformAudioDevice {
 };
 
 PlatformAudioDevice* ps5_open_audio(PlatformMixCallback callback, void* context, unsigned int frames) {
-    if (!callback || frames < 256 || frames > 2048 || frames % 256) return nullptr;
+    if (!callback || frames < 256 || frames > 2048 || frames % 256) {
+        return nullptr;
+    }
     (void)sceAudioOutInit();
     // Main output, 48 kHz, signed 16-bit stereo (public PS5 AudioOut ABI).
     int port = sceAudioOutOpen(0xff, 0, 0, frames, 48000, 1);
@@ -58,9 +61,13 @@ PlatformAudioDevice* ps5_open_audio(PlatformMixCallback callback, void* context,
 }
 
 void ps5_close_audio(PlatformAudioDevice* device) {
-    if (!device) return;
+    if (!device) {
+        return;
+    }
     device->running.store(false);
-    if (device->worker.joinable()) device->worker.join();
+    if (device->worker.joinable()) {
+        device->worker.join();
+    }
     sceAudioOutOutput(device->port, nullptr);
     sceAudioOutClose(device->port);
     delete device;

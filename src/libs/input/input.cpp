@@ -1,11 +1,8 @@
 #include "input.h"
-#include "../../platform/platform.h"
 
 #include <algorithm>
 #include <array>
 #include <bitset>
-#include <span>
-#include <string_view>
 #include <cstdint>
 #include <cstdio>
 #include <deque>
@@ -14,9 +11,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
+#include "../../platform/platform.h"
 #include "../gfx.h"
 #include "../gfx/texture.h"
 #include "../math/animation.h"
@@ -176,7 +176,9 @@ public:
         return found == ids.end() ? -1 : static_cast<int>(found - ids.begin());
     }
     int device(int slot) const { return ids[slot]; }
-    int count() const { return static_cast<int>(std::ranges::count_if(ids, [](int id) { return id >= 0; })); }
+    int count() const {
+        return static_cast<int>(std::ranges::count_if(ids, [](int id) { return id >= 0; }));
+    }
 };
 static ControllerSlots controller_slots;     // input thread only
 static std::atomic<int> slotted_gamepads{0}; // controller_slots.count(), for the game thread
@@ -195,14 +197,27 @@ static bool separate_players() {
 // Optional fixed gamepad layout for menus (keys.gamepad_menu_layout): D-pad/shoulders move,
 // South confirms, East/touchpad go back, Start restarts. It replaces the drum bindings in menus,
 // where pads whose drum layout uses the face buttons would otherwise confirm and go back at once.
-enum class MenuAction { None, Left, Right, Confirm };
+enum class MenuAction {
+    None,
+    Left,
+    Right,
+    Confirm
+};
 static constexpr int PAD_EAST = 6, PAD_START = 15, PAD_TOUCHPAD = 18;
 static constexpr MenuAction menu_action(int button) {
     switch (button) {
-    case 1: case 4: case 9: return MenuAction::Left;
-    case 2: case 3: case 11: return MenuAction::Right;
-    case 7: return MenuAction::Confirm;
-    default: return MenuAction::None;
+    case 1:
+    case 4:
+    case 9:
+        return MenuAction::Left;
+    case 2:
+    case 3:
+    case 11:
+        return MenuAction::Right;
+    case 7:
+        return MenuAction::Confirm;
+    default:
+        return MenuAction::None;
     }
 }
 
@@ -256,8 +271,8 @@ bool is_input_key_pressed(const std::vector<int>& keys, const std::vector<int>& 
                                [strength](int button) { return check_key_pressed(10000 + button, strength); });
 }
 
-static bool player_input_pressed(const std::vector<int>& keys, const std::vector<int>& buttons,
-                                 PlayerNum player, float* strength) {
+static bool player_input_pressed(const std::vector<int>& keys, const std::vector<int>& buttons, PlayerNum player,
+                                 float* strength) {
     if (separate_players()) {
         for (int key : keys) {
             if (check_key_pressed(key, strength)) {
@@ -265,9 +280,8 @@ static bool player_input_pressed(const std::vector<int>& keys, const std::vector
             }
         }
         const int slot = player == PlayerNum::P2 ? 1 : 0;
-        return std::ranges::any_of(buttons, [slot, strength](int button) {
-            return check_key_pressed(pad_slot_key(slot, button), strength);
-        });
+        return std::ranges::any_of(
+            buttons, [slot, strength](int button) { return check_key_pressed(pad_slot_key(slot, button), strength); });
     }
     return is_input_key_pressed(keys, buttons, strength);
 }
@@ -662,8 +676,7 @@ void poll_keyboard_once() {
         {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, 9}, {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, 11},
         {SDL_GAMEPAD_BUTTON_BACK, 13},         {SDL_GAMEPAD_BUTTON_GUIDE, 14},
         {SDL_GAMEPAD_BUTTON_START, 15},        {SDL_GAMEPAD_BUTTON_LEFT_STICK, 16},
-        {SDL_GAMEPAD_BUTTON_RIGHT_STICK, 17},
-        {SDL_GAMEPAD_BUTTON_TOUCHPAD, 18},
+        {SDL_GAMEPAD_BUTTON_RIGHT_STICK, 17},  {SDL_GAMEPAD_BUTTON_TOUCHPAD, 18},
     };
     constexpr float TRIGGER_THRESHOLD = 0.1f;
 
