@@ -54,7 +54,7 @@ automatically during two-player play.
 - **macOS**: Built via CI, largely untested
 - **Linux**: Ubuntu 20.04 or higher (other distributions may work but are untested)
 - **Android**: Android 10 (API 29) or higher
-- **iOS**: iOS 16.3 or higher; build from source with Xcode (see [iOS guide](ios/README.md))
+- **iOS**: iOS 16.3 or higher; install via [TestFlight](https://testflight.apple.com/join/ZzrXBUsb) or build from source with Xcode (see [iOS guide](ios/README.md))
 
 ## FAQ
 
@@ -76,6 +76,10 @@ Download the latest release for your operating system from the [releases page](h
 
 #### Android
 1. Install `YataiDON-Android.apk` (enable "install from unknown sources" if needed)
+
+#### iOS
+1. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664) from the App Store
+2. Join the beta: https://testflight.apple.com/join/ZzrXBUsb
 
 ## Building from Source
 

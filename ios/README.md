@@ -5,6 +5,9 @@ FFmpeg decoding, and touch drum controls with Android. It builds a landscape app
 for iPhone and iPad running iOS 16.3 or later. This is a source port; physical-device
 latency and distribution signing still need validation.
 
+To install a pre-built beta instead of building, join the
+[TestFlight beta](https://testflight.apple.com/join/ZzrXBUsb).
+
 ## Build on a Mac
 
 Install Xcode (including the iOS SDK) and CMake 3.24 or newer. Select the full Xcode
