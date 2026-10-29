@@ -12,12 +12,9 @@ installation with `sudo xcode-select -s /Applications/Xcode.app/Contents/Develop
 if the command-line tools are selected instead. Python 3, Git, and curl are also
 required. The first build downloads and compiles dependencies.
 
-Skins are no longer submodules. Clone `PyTaikoGreen`, `YataiDONRed` and `YataiDONNijiiro` into `Skins/` on a fresh checkout. If your assets live
-elsewhere, pass `-DYATAIDON_SKINS_DIR=/absolute/path/to/Skins` to the build script.
-Use the complete `Skins` directory from the matching skin revisions, including
-`PyTaikoGreen` and `YataiDONNijiiro`: texture IDs are generated across skins. All
-skins placed there are included. `-DIOS_SONGS_DIR=/absolute/path/to/Songs` changes the bundled
-song library. Large skin videos increase both app size and first-launch copy time.
+Skins are not bundled in the iOS app. On first launch the app opens the onboarding
+screen and downloads the selected skins in-game, which keeps the IPA small.
+`-DIOS_SONGS_DIR=/absolute/path/to/Songs` changes the bundled song library.
 
 ### Simulator
 
@@ -68,7 +65,6 @@ tool and credentials before installing it on an iPhone or iPad.
 
 The job reuses the existing repository secrets:
 
-- `GITEA_USER` and `GITEA_TOKEN` to clone the private skins.
 - `NETWORK_URL` and `NETWORK_AUTH_KEY` to enable the online client. When either is
   absent, the build uses the offline implementation; runtime network switches
   still follow the configuration described below.

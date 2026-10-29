@@ -136,42 +136,10 @@ jobs:
       - name: Select Xcode 26.6
         run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
 
-      - name: Configure Git credentials
-        env:
-          GITEA_USER: ${{ secrets.GITEA_USER }}
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
-        run: |
-          git config --global credential.helper ""
-          git config --global url."https://${GITEA_USER}:${GITEA_TOKEN}@ese.tjadataba.se/".insteadOf "https://ese.tjadataba.se/"
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: false
-
-      - name: Get skin heads
-        id: skins
-        run: |
-          for s in PyTaikoGreen YataiDONRed YataiDONNijiiro; do
-            echo "$s=$(git ls-remote https://ese.tjadataba.se/Yonokid/$s.git HEAD | cut -f1)" >> "$GITHUB_OUTPUT"
-          done
-
-      - name: Cache skins
-        id: cache-skins
-        uses: actions/cache@v4
-        with:
-          path: |
-            Skins/PyTaikoGreen
-            Skins/YataiDONRed
-            Skins/YataiDONNijiiro
-          key: skins-${{ steps.skins.outputs.PyTaikoGreen }}-${{ steps.skins.outputs.YataiDONRed }}-${{ steps.skins.outputs.YataiDONNijiiro }}
-
-      - name: Clone skins
-        if: steps.cache-skins.outputs.cache-hit != 'true'
-        run: |
-          for s in PyTaikoGreen YataiDONRed YataiDONNijiiro; do
-            git clone --depth 1 https://ese.tjadataba.se/Yonokid/$s.git Skins/$s
-          done
 
       - name: Install build tools
         run: |
