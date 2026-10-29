@@ -12,6 +12,8 @@
 #include <unordered_set>
 
 #include "../../platform/platform.h"
+#include "../asset_cache.h"
+#include "../gfx.h"
 #include "../../platform/platform_windows.h"
 
 void set_working_directory_to_executable() {
@@ -406,26 +408,43 @@ std::vector<fs::path> get_song_files(const std::vector<fs::path>& root_path) {
     return deduped;
 }
 
-rapidjson::Document read_json_file(const fs::path& file_path) {
-    if (!fs::exists(file_path)) {
-        throw std::runtime_error("File not found: " + file_path.string());
-    }
+// Parsed skin JSON (texture.json etc.) by path, kept across screens.
+static AssetCache<rapidjson::Document>& skin_json_cache() {
+    static AssetCache<rapidjson::Document> cache(asset_cache_budget(16u << 20));
+    return cache;
+}
 
+rapidjson::Document read_json_file(const fs::path& file_path) {
     if (file_path.extension() != ".json") {
         throw std::runtime_error("File is not a json file: " + file_path.string());
     }
 
-    std::ifstream ifs(file_path);
-
-    if (!ifs) {
-        throw std::runtime_error("Failed to open file: " + file_path.string());
+    const std::string cache_key = file_path.lexically_normal().generic_string();
+    const bool cacheable = skin_json_cache().enabled() &&
+                           (cache_key.starts_with("Skins/") || cache_key.find("/Skins/") != std::string::npos);
+    if (cacheable) {
+        if (auto cached = skin_json_cache().get(cache_key)) {
+            rapidjson::Document copy;
+            copy.CopyFrom(*cached, copy.GetAllocator());
+            return copy;
+        }
     }
-    rapidjson::IStreamWrapper isw(ifs);
+    const std::vector<unsigned char> bytes = load_file_bytes(file_path.string().c_str());
+    if (bytes.empty()) {
+        throw std::runtime_error((fs::exists(file_path) ? "Failed to open file: " : "File not found: ") +
+                                 file_path.string());
+    }
     rapidjson::Document doc;
-    doc.ParseStream(isw);
+    doc.Parse(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 
     if (doc.HasParseError()) {
         throw std::runtime_error("Failed to parse " + file_path.string() + ": " + std::to_string(doc.GetParseError()));
+    }
+    if (cacheable) {
+        auto cached = std::make_shared<rapidjson::Document>();
+        cached->CopyFrom(doc, cached->GetAllocator());
+        const size_t bytes = sizeof(rapidjson::Document) + cached->GetAllocator().Capacity();
+        skin_json_cache().put(cache_key, std::move(cached), bytes);
     }
 
     return doc;

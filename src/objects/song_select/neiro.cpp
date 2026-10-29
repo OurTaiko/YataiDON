@@ -6,6 +6,7 @@
 #include "../../libs/file/filesystem.h"
 
 NeiroSelector::NeiroSelector(PlayerNum player_num, PlayerData* player) : player_num(player_num), player(player) {
+    PlayerSoundScope audio_owner(player_num);
     static int next_instance_id = 0;
     instance_id = ++next_instance_id;
     selected_sound = player->neiro_index;
@@ -34,7 +35,7 @@ NeiroSelector::NeiroSelector(PlayerNum player_num, PlayerData* player) : player_
     }
     selected_sound = std::clamp(selected_sound, 0, static_cast<int>(sounds.size()) - 1);
     load_sound();
-    audio.play_sound("voice_hitsound_select_" + std::to_string(static_cast<int>(player_num)) + "p",
+    audio.play_player_sound("voice_hitsound_select_" + std::to_string(static_cast<int>(player_num)) + "p", player_num,
                      VolumePreset::VOICE);
 
     move = dynamic_cast<MoveAnimation*>(tex.get_animation(28, true));
@@ -77,7 +78,7 @@ void NeiroSelector::left() {
     if (selected_sound == std::ssize(sounds) - 1) {
         return;
     }
-    audio.play_sound(curr_sound, VolumePreset::HITSOUND);
+    audio.play_player_sound(curr_sound, player_num, VolumePreset::HITSOUND);
 }
 
 void NeiroSelector::right() {
@@ -97,7 +98,7 @@ void NeiroSelector::right() {
     if (selected_sound == std::ssize(sounds) - 1) {
         return;
     }
-    audio.play_sound(curr_sound, VolumePreset::HITSOUND);
+    audio.play_player_sound(curr_sound, player_num, VolumePreset::HITSOUND);
 }
 
 void NeiroSelector::confirm() {
@@ -115,6 +116,7 @@ void NeiroSelector::confirm() {
 }
 
 void NeiroSelector::update(double current_ms) {
+    PlayerSoundScope audio_owner(player_num);
     move->update(current_ms);
     blue_arrow_fade->update(current_ms);
     blue_arrow_move->update(current_ms);

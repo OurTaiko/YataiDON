@@ -59,3 +59,8 @@ void mobile_install_lifecycle_handlers() {
         },
         nullptr);
 }
+
+// Phones can be low on memory and the OS kills apps that hold too much.
+bool platform_retains_assets() {
+    return false;
+}

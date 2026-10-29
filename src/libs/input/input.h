@@ -66,7 +66,7 @@ void clear_input_buffers();
 void shutdown_sdl_joysticks();
 
 // Platform-independent keyboard visibility control
-void set_keyboard_visible(bool visible);
+void set_keyboard_visible(bool visible, const std::string& initial_text = {});
 
 bool is_text_input_key(int key);
 

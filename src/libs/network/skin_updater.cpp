@@ -14,7 +14,7 @@
 #include "../math/sha256.h"
 #include "android_ca.h"
 
-#ifndef __EMSCRIPTEN__
+#if defined(YATAIDON_HAS_HTTP)
 
 #include <cpr/cpr.h>
 
@@ -449,6 +449,10 @@ void SkinUpdater::scan_skins() {
     clear_session_pool();
 }
 
+bool SkinUpdater::available() {
+    return true;
+}
+
 void SkinUpdater::start() {
     if (started_.exchange(true)) {
         return;
@@ -543,8 +547,11 @@ void SkinUpdater::shutdown() {
 
 SkinUpdater skin_updater;
 
-#else // __EMSCRIPTEN__
+#else // no HTTP client
 
+bool SkinUpdater::available() {
+    return false;
+}
 void SkinUpdater::start() {}
 void SkinUpdater::download(std::vector<Request>) {}
 bool SkinUpdater::in_progress() {

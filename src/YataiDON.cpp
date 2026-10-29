@@ -16,6 +16,7 @@
 #include "libs/network/network.h"
 #include "libs/network/skin_updater.h"
 #include "libs/parsers/song_parser.h"
+#include "libs/asset_cache.h"
 #include "libs/profiler.h"
 #include "libs/screen.h"
 #include "libs/video/webcam.h"
@@ -383,10 +384,25 @@ void reload_skin_screens() {
     populate_screens(g_loop->screens, g_loop->current_screen);
 }
 
+static std::chrono::steady_clock::duration frame_duration(double fps) {
+    return fps > 0.0 ? std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                           std::chrono::duration<double>(1.0 / fps))
+                     : std::chrono::steady_clock::duration::zero();
+}
+
 static void run_frame() {
     PROFILE_FRAME();
     PROFILE_SCOPE();
     LoopState& L = *g_loop;
+    // Settings can change the target frame rate while running; the platform may adjust it
+    // (written back so settings show what is in effect).
+    static int applied_fps = global_data.config->video.target_fps;
+    if (global_data.config->video.target_fps != applied_fps) {
+        applied_fps = global_data.config->video.target_fps =
+            platform_apply_target_fps(global_data.config->video.target_fps);
+        L.target_duration = frame_duration(applied_fps);
+        L.next_frame_time = std::chrono::steady_clock::now();
+    }
 
     g_frame_ms = get_current_ms();
 
@@ -394,8 +410,8 @@ static void run_frame() {
     if (platform_is_suspended()) {
         return;
     }
-#if defined(YATAIDON_PLATFORM_IOS) || defined(__EMSCRIPTEN__)
-    poll_keyboard_once(); // no input thread on these platforms
+#ifndef YATAIDON_INPUT_THREAD
+    poll_keyboard_once(); // no input thread polling it
 #endif
     poll_touch_once();
 
@@ -463,6 +479,7 @@ static void run_frame() {
     sync_text_input();
 
     if (!next_screen.has_value() && debug_menu.requested_screen.has_value()) {
+        clear_asset_caches(); // a debug jump re-reads the skin from disk, so edits show up
         next_screen = screen->on_screen_end(debug_menu.requested_screen.value());
         debug_menu.requested_screen.reset();
     }
@@ -564,7 +581,7 @@ static void run_frame() {
 #endif
 }
 
-int main(int argc, char* argv[]) {
+static int game_main(int argc, char* argv[]) {
     spdlog::info("Starting YataiDON");
     set_working_directory_to_executable();
     const bool had_config = std::filesystem::exists("config.toml");
@@ -577,7 +594,7 @@ int main(int argc, char* argv[]) {
     parse_card_reader_args(argc, argv, global_data.config->card_reader);
     Screens initial_screen = check_args(argc, argv);
     init_scores_manager(global_data.config->general.score_method == ScoreMethod::GEN3);
-    unsigned int flags = window_flag::RESIZABLE;
+    unsigned int flags = platform_window_flags(0);
     if (global_data.config->video.vsync) {
         flags |= window_flag::VSYNC;
         spdlog::info("VSync enabled");
@@ -589,9 +606,7 @@ int main(int argc, char* argv[]) {
     quiet_raylib_log();
     setup_logging(global_data.config->general.log_level);
 
-    ime_ui_set_hint();
-    init_window(1280, 720, "YataiDON");
-    ime_ui_install();
+    platform_init_window();
     try {
         load_skin();
     } catch (const std::exception& e) {
@@ -628,7 +643,8 @@ int main(int argc, char* argv[]) {
 
     platform_initialize_after_window();
 
-    double target_fps = global_data.config->video.target_fps;
+    const int target_fps = global_data.config->video.target_fps =
+        platform_apply_target_fps(global_data.config->video.target_fps);
     if (target_fps != -1) {
         spdlog::info("Target FPS set to {}", target_fps);
     }
@@ -638,9 +654,7 @@ int main(int argc, char* argv[]) {
 
     L.current_screen = initial_screen;
     global_data.current_screen = screens_to_string(initial_screen);
-    L.target_duration = (target_fps > 0.0) ? std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                                                 std::chrono::duration<double>(1.0 / target_fps))
-                                           : std::chrono::steady_clock::duration::zero();
+    L.target_duration = frame_duration(target_fps);
 
     populate_screens(L.screens);
 
@@ -667,7 +681,9 @@ int main(int argc, char* argv[]) {
 #elif defined(YATAIDON_PLATFORM_IOS)
     return ios_run_main_loop(run_frame);
 #else
+#ifdef YATAIDON_INPUT_THREAD
     input_thread = std::thread(input_polling_thread);
+#endif
     start_midi_input(global_data.config->midi);
 
     while (!window_should_close()) {
@@ -699,4 +715,9 @@ int main(int argc, char* argv[]) {
     platform_close_window();
     spdlog::info("Game closed");
 #endif
+    return 0;
+}
+
+int main(int argc, char* argv[]) {
+    return platform_run_main(game_main, argc, argv);
 }

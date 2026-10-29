@@ -7,6 +7,7 @@
 
 ResultPlayer::ResultPlayer(PlayerNum player_num, bool has_2p, bool is_2p)
     : player_num(player_num), has_2p(has_2p), is_2p(is_2p) {
+    PlayerSoundScope audio_owner(player_num);
     std::string player_id = get_player_id(player_num);
     auto pd = scores_manager.get_player_data(player_id);
 
@@ -128,7 +129,8 @@ void ResultPlayer::update_score_animation(double current_ms, bool is_skipped) {
             assign_field(field_name, std::to_string(value));
             bool is_last = (update_index == std::ssize(update_list) - 1);
             if (!count_up_sound_1p_only || player_num == PlayerNum::P1) {
-                audio.play_sound(is_last ? count_up_score_sound : count_up_row_sound, VolumePreset::SOUND);
+                audio.play_player_sound(is_last ? count_up_score_sound : count_up_row_sound,
+                                        count_up_sound_1p_only ? PlayerNum::ALL : player_num, VolumePreset::SOUND);
             }
             update_index++;
             score_delay.value() += (update_index == std::ssize(update_list) - 1) ? count_up_score_ms : count_up_row_ms;
@@ -140,10 +142,10 @@ void ResultPlayer::update_score_animation(double current_ms, bool is_skipped) {
         int new_num = std::stoi(next_score_str);
         assign_field(field_name, next_score_str);
         if (new_num != curr_num) {
-            audio.play_sound("num_up", VolumePreset::SOUND);
+            audio.play_player_sound("num_up", player_num, VolumePreset::SOUND);
         }
         if (score_animator->is_finished) {
-            audio.play_sound("don", VolumePreset::SOUND);
+            audio.play_player_sound("don", player_num, VolumePreset::SOUND);
             score_delay.value() += 750;
             if (update_index == std::ssize(update_list) - 1) {
                 rows_done_ms = current_ms;
@@ -163,7 +165,7 @@ void ResultPlayer::update_score_animation(double current_ms, bool is_skipped) {
     if (!score.empty() && !high_score_sound_played) {
         SessionData& sd = global_data.session_data[static_cast<int>(player_num)];
         if (sd.result_data.score > sd.result_data.prev_score) {
-            audio.play_sound("high_score_voice_" + std::to_string(static_cast<int>(player_num)) + "p",
+            audio.play_player_sound("high_score_voice_" + std::to_string(static_cast<int>(player_num)) + "p", player_num,
                              VolumePreset::VOICE);
             high_score_sound_played = true;
         }
@@ -171,6 +173,7 @@ void ResultPlayer::update_score_animation(double current_ms, bool is_skipped) {
 }
 
 void ResultPlayer::update(double current_ms, bool fade_in_finished, bool is_skipped) {
+    PlayerSoundScope audio_owner(player_num);
     if (!score_delay.has_value() && lua_object.valid()) {
         sol::optional<bool> lua_started = lua_object["fade_in_started"];
         if (lua_started && lua_started.value()) {
@@ -213,6 +216,7 @@ void ResultPlayer::draw_song_info(const std::string& title, const std::string& s
 }
 
 void ResultPlayer::draw() {
+    PlayerSoundScope audio_owner(player_num);
     call(fn_draw, "ResultPlayer:draw");
     auto [cx, cy] = tex.chara_xy("result");
     cy += static_cast<int>(is_2p) * tex.screen_height / 2;

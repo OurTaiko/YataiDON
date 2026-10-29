@@ -95,7 +95,11 @@ public:
 
     virtual ~Screen() = default;
 
+    // Scene identity is independent of its shared skin name and login seat.
+    virtual bool two_player_audio() const { return false; }
+
     virtual void on_screen_start() {
+        audio.set_two_player_mode(two_player_audio());
         tex.load_screen_textures(screen_name);
         audio.load_screen_sounds(screen_name);
     }

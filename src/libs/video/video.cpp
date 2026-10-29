@@ -4,11 +4,12 @@
 #include <spdlog/spdlog.h>
 
 #include "../audio/audio.h"
-#include "../gfx.h"
-#include "../gfx/texture.h"
 #include "../profiler.h"
+#include "../gfx/texture.h"
+#include "../../platform/platform.h"
 
 VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
+    source_path = path;
     if (path.extension() == ".png" || path.extension() == ".jpg") {
         texture = load_texture(path.string().c_str());
         is_static = true;
@@ -22,6 +23,8 @@ VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
     }
 
 #ifndef __EMSCRIPTEN__
+    is_finished_arr = {true, true};
+    try {
     container = av::AVContainer::open(path);
     if (!container) {
         spdlog::error("Failed to open video: {}", path.string());
@@ -56,6 +59,14 @@ VideoPlayer::VideoPlayer(const fs::path& path) : is_finished_arr{false, false} {
 
     frame_index = 0;
     frame_duration = (fps > 0.f) ? 1000.0 / fps : 0.0;
+    is_finished_arr = {false, !audio_stream};
+    } catch (const std::exception& error) {
+        spdlog::error("Skipping video {}: {}", path.string(), error.what());
+        video_stream.reset();
+        audio_stream.reset();
+        container.reset();
+        is_finished_arr = {true, true};
+    }
 #endif
 }
 
@@ -88,10 +99,8 @@ void VideoPlayer::decode_loop() {
         frame_generator = container->decode_video(0);
 
         int produced = 0;
+        auto hardware = platform_open_video_decoder(source_path, decode_stop);
         while (!decode_stop.load(std::memory_order_relaxed)) {
-            if (!frame_generator->next(current_decoded_frame)) {
-                break; // EOF
-            }
             DecodedFrame frame;
             {
                 std::scoped_lock lock(queue_mutex);
@@ -100,11 +109,28 @@ void VideoPlayer::decode_loop() {
                     spare_buffers.pop_back();
                 }
             }
-            current_decoded_frame->to_rgba(sws, frame.bytes);
-            frame.width = current_decoded_frame->width();
-            frame.height = current_decoded_frame->height();
+            if (hardware) {
+                try {
+                    if (!hardware->next(frame.bytes, frame.width, frame.height)) break;
+                } catch (const std::exception& error) {
+                    spdlog::warn("Hardware video failed at frame {}: {}; switching to software", produced, error.what());
+                    hardware.reset();
+                    // The software decoder has not consumed packets yet. Catch
+                    // it up so fallback neither repeats frames nor restarts audio.
+                    for (int i = 0; i < produced && !decode_stop.load(); ++i) {
+                        if (!frame_generator->next(current_decoded_frame)) break;
+                        current_decoded_frame.reset();
+                    }
+                    continue;
+                }
+            } else {
+                if (!frame_generator->next(current_decoded_frame)) break;
+                current_decoded_frame->to_rgba(sws, frame.bytes);
+                frame.width = current_decoded_frame->width();
+                frame.height = current_decoded_frame->height();
+                current_decoded_frame.reset();
+            }
             frame.index = produced++;
-            current_decoded_frame.reset();
 
             std::unique_lock<std::mutex> lock(queue_mutex);
             queue_cv.wait(lock, [&] {
@@ -141,6 +167,8 @@ void VideoPlayer::stop_decode_thread() {
 }
 
 void VideoPlayer::upload_frame(const DecodedFrame& frame) {
+    std::swap(texture, upload_spares[upload_slot]);
+    upload_slot = (upload_slot + 1) % upload_spares.size();
     const void* pixels_ptr = static_cast<const void*>(frame.bytes.data());
 
     if (texture.has_value() && (texture->width != frame.width || texture->height != frame.height)) {
@@ -177,7 +205,7 @@ void VideoPlayer::start(double current_ms) {
     audio.stop_music_stream(audio_s);
     decode_stop.store(false);
     frame_index = 0;
-    is_finished_arr = {false, false};
+    is_finished_arr = {false, !audio_stream};
     audio_started = false;
     start_ms = current_ms;
     try {
@@ -282,6 +310,11 @@ void VideoPlayer::draw() {
 
 void VideoPlayer::stop() {
     stop_decode_thread();
+    for (auto& spare : upload_spares) {
+        if (spare) unload_texture(*spare);
+        spare.reset();
+    }
+    upload_slot = 0;
     start_ms.reset();
 
     if (is_static) {

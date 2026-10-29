@@ -94,6 +94,7 @@ static std::string int_display(int v) {
     return std::to_string(v);
 }
 
+
 IntOptionBox::IntOptionBox(const std::string& name, const std::string& description, const std::string& path,
                            const std::map<std::string, std::string>& values)
     : BaseOptionBox(name, description, path), value(config_ref.get_int()), value_text(nullptr),
@@ -146,6 +147,16 @@ void IntOptionBox::confirm() {
 
 void IntOptionBox::update(double current_time) {
     flicker_fade->update(current_time);
+    // The engine can adjust a value after it is set (e.g. a display rejecting a refresh rate).
+    if (!is_highlighted && config_ref.get_int() != value) {
+        value = config_ref.get_int();
+        for (int i = 0; i < std::ssize(value_list); i++) {
+            if (value_list[i].first == value) {
+                value_index = i;
+            }
+        }
+        rebuild_text();
+    }
 }
 
 void IntOptionBox::move_left() {
@@ -234,6 +245,11 @@ void StrOptionBox::update(double current_time) {
         if (action == TextEditAction::Confirm) {
             value = input_string;
             confirm();
+            is_highlighted = false;
+            set_keyboard_visible(false);
+        }
+        if (action == TextEditAction::Cancel) {
+            input_string = value;
             is_highlighted = false;
             set_keyboard_visible(false);
         }

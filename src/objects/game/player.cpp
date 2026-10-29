@@ -18,6 +18,7 @@ Player::Player(std::optional<SongParser>& parser_ref, PlayerNum player_num_param
     : is_2p(is_2p_param), player_num(player_num_param), difficulty(difficulty_param),
       visual_offset(global_data.config->general.visual_offset), score_method(global_data.config->general.score_method),
       modifiers(modifiers_param), parser(parser_ref), combo_display(combo, 0), score_counter(is_2p, player_num) {
+    PlayerSoundScope audio_owner(player_num);
     init_player_textures();
     reset_chart();
     don_hitsound = "hitsound_don_" + std::to_string(static_cast<int>(player_num)) + "p";
@@ -178,6 +179,7 @@ void Player::on_miss() {
 }
 
 void Player::spawn_ending_anim(Background* background) {
+    PlayerSoundScope audio_owner(player_num);
     ending_background = background;
     if (skipped_run) {
         ending_anim.reset();
@@ -293,7 +295,7 @@ void Player::autoplay_manager(double ms_from_start, double current_ms, std::opti
             hit_type = DrumType::DON;
             autoplay_hit_side = autoplay_hit_side == Side::LEFT ? Side::RIGHT : Side::LEFT;
             spawn_hit_effects(hit_type, autoplay_hit_side);
-            audio.play_sound(don_hitsound, VolumePreset::HITSOUND);
+            audio.play_player_sound(don_hitsound, player_num, VolumePreset::HITSOUND);
             check_note(ms_from_start, hit_type, current_ms, background);
         }
     } else {
@@ -316,7 +318,7 @@ void Player::autoplay_manager(double ms_from_start, double current_ms, std::opti
             const size_t remaining = don_notes.size();
             hit_type = DrumType::DON;
             autoplay_hit(hit_type, don_notes.front().type == NoteType::DON_L);
-            audio.play_sound(don_hitsound, VolumePreset::HITSOUND);
+            audio.play_player_sound(don_hitsound, player_num, VolumePreset::HITSOUND);
             check_note(ms_from_start, hit_type, current_ms, background);
             last_note_hit = current_ms;
             if (don_notes.size() == remaining) {
@@ -331,7 +333,7 @@ void Player::autoplay_manager(double ms_from_start, double current_ms, std::opti
             const size_t remaining = kat_notes.size();
             hit_type = DrumType::KAT;
             autoplay_hit(hit_type, kat_notes.front().type == NoteType::KAT_L);
-            audio.play_sound(kat_hitsound, VolumePreset::HITSOUND);
+            audio.play_player_sound(kat_hitsound, player_num, VolumePreset::HITSOUND);
             check_note(ms_from_start, hit_type, current_ms, background);
             if (kat_notes.size() == remaining) {
                 break;
@@ -460,6 +462,7 @@ void Player::evaluate_branch(double current_ms) {
 }
 
 void Player::update(double ms_from_start, double current_ms, std::optional<Background>& background) {
+    PlayerSoundScope audio_owner(player_num);
     bg_hook = background.has_value() ? &background.value() : nullptr;
 
     note_manager(ms_from_start, background);
@@ -608,6 +611,7 @@ void Player::update(double ms_from_start, double current_ms, std::optional<Backg
 }
 
 void Player::draw(double ms_from_start, float x, float y) {
+    PlayerSoundScope audio_owner(player_num);
     tex.draw_texture(t_lane_background, {.y = y});
     if (player_num == PlayerNum::AI) {
         tex.draw_texture(t_ai_lane_background, {.y = y});
@@ -1516,7 +1520,7 @@ void Player::check_balloon(double current_ms, DrumType drum_type, const Note& ba
     if (curr_balloon_count == balloon.count.value()) {
         is_balloon = false;
         balloon_counter->update(current_ms, curr_balloon_count);
-        audio.play_sound("balloon_pop", VolumePreset::HITSOUND);
+        audio.play_player_sound("balloon_pop", player_num, VolumePreset::HITSOUND);
         note_correct(balloon, current_ms);
         curr_balloon_count = 0;
     }
@@ -1549,7 +1553,7 @@ void Player::check_kusudama(double current_ms, DrumType drum_type, const Note& b
     owner->kusudama_counter->update(current_ms, owner->kusudama_shared_hits);
 
     if (owner->kusudama_shared_hits == balloon.count.value()) {
-        audio.play_sound("kusudama_pop", VolumePreset::HITSOUND);
+        audio.play_player_sound("kusudama_pop", PlayerNum::ALL, VolumePreset::HITSOUND); // shared by both players
 
         is_balloon = false;
         note_correct(balloon, current_ms);
@@ -1826,6 +1830,7 @@ void Player::spawn_hit_effects(DrumType drum_type, Side side) {
 }
 
 void Player::handle_input(double ms_from_start, double current_ms, std::optional<Background>& background) {
+    PlayerSoundScope audio_owner(player_num);
     if (modifiers.auto_play) {
         return;
     }
@@ -1837,7 +1842,7 @@ void Player::handle_input(double ms_from_start, double current_ms, std::optional
                 (log_type == InputLogType::DON_L || log_type == InputLogType::DON_R) ? DrumType::DON : DrumType::KAT;
             Side side = (log_type == InputLogType::DON_L || log_type == InputLogType::KAT_L) ? Side::LEFT : Side::RIGHT;
             spawn_hit_effects(drum_type, side);
-            audio.play_sound(drum_type == DrumType::DON ? don_hitsound : kat_hitsound, VolumePreset::HITSOUND);
+            audio.play_player_sound(drum_type == DrumType::DON ? don_hitsound : kat_hitsound, player_num, VolumePreset::HITSOUND);
             check_note(log_ms, drum_type, current_ms, background);
             ++replay_cursor;
         }
@@ -1861,7 +1866,7 @@ void Player::handle_input(double ms_from_start, double current_ms, std::optional
         float strength = 1.0f;
         while (input.check_func(player_num, &strength)) {
             spawn_hit_effects(input.drum_type, input.side);
-            audio.play_sound(*input.sound, VolumePreset::HITSOUND, strength);
+            audio.play_player_sound(*input.sound, player_num, VolumePreset::HITSOUND, strength);
             InputLogType log_type;
             if (input.drum_type == DrumType::DON) {
                 log_type = input.side == Side::LEFT ? InputLogType::DON_L : InputLogType::DON_R;

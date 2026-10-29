@@ -516,8 +516,14 @@ namespace av {
         // Factory – mirrors PyAV's av.open(path).
         static std::unique_ptr<AVContainer> open(const std::filesystem::path& path) {
             ::AVFormatContext* ctx = nullptr;
-            check(avformat_open_input(&ctx, path.string().c_str(), nullptr, nullptr), "avformat_open_input");
-            check(avformat_find_stream_info(ctx, nullptr), "avformat_find_stream_info");
+            try {
+                const auto input_path = std::filesystem::absolute(path);
+                check(avformat_open_input(&ctx, input_path.string().c_str(), nullptr, nullptr), "avformat_open_input");
+                check(avformat_find_stream_info(ctx, nullptr), "avformat_find_stream_info");
+            } catch (...) {
+                avformat_close_input(&ctx);
+                throw;
+            }
             return std::unique_ptr<AVContainer>(new AVContainer(ctx));
         }
 

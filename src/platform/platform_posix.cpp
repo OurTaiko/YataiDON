@@ -109,3 +109,7 @@ void platform_install_crash_handlers() {
         spdlog::warn("sigaction(SIGINT) failed: {}", strerror(errno));
     }
 }
+
+bool platform_retains_assets() {
+    return true;
+}

@@ -24,10 +24,15 @@ private:
     };
 
     std::optional<Texture> texture;
+    // Active texture plus two spares: don't overwrite the previous display's
+    // sampled storage when a new video frame arrives.
+    std::array<std::optional<Texture>, 2> upload_spares;
+    unsigned upload_slot = 0;
     std::array<bool, 2> is_finished_arr = {false, false};
     bool audio_started = false;
     std::string audio_s;
     bool is_static = false;
+    fs::path source_path; // reopened by a platform hardware decoder
 
     float fps = 0.f;
     double duration = 0.0;

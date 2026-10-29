@@ -17,6 +17,8 @@ protected:
     bool hides_dan() override { return true; }
 
 public:
+    bool two_player_audio() const override { return true; }
+
     SongSelect2PScreen() : SongSelectScreen("song_select") {}
 
     void on_screen_start() override;

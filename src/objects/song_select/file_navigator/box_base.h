@@ -160,6 +160,7 @@ protected:
     std::unique_ptr<MoveAnimation> move;
 
     Shader shader;
+    std::shared_ptr<Shader> shader_owner;
     bool shader_loaded = false;
 
     std::unique_ptr<OutlinedText> name;

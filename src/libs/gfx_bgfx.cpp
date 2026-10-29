@@ -404,6 +404,11 @@ namespace {
     }
 
     void native_handles(void*& nwh, void*& ndt, bgfx::NativeWindowHandleType::Enum& type) {
+#ifdef YATAIDON_USE_SDL2 // no window properties: the platform's renderer bridge takes the SDL window
+        nwh = window;
+        ndt = nullptr;
+        type = bgfx::NativeWindowHandleType::Default;
+#else
         SDL_PropertiesID props = SDL_GetWindowProperties(window);
 #ifdef __ANDROID__
         ndt = nullptr;
@@ -420,6 +425,7 @@ namespace {
             nwh = (void*)(uintptr_t)SDL_GetNumberProperty(props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
             type = bgfx::NativeWindowHandleType::Default;
         }
+#endif
     }
 
     bgfx::RendererType::Enum renderer_from_env() {
@@ -554,7 +560,12 @@ void init_window(int width, int height, const char* title) {
         spdlog::critical("SDL video init failed: {}", SDL_GetError());
         std::abort();
     }
+#ifdef YATAIDON_USE_SDL2
+    window = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height,
+                              (window_flags & window_flag::RESIZABLE) ? SDL_WINDOW_RESIZABLE : 0);
+#else
     window = SDL_CreateWindow(title, width, height, (window_flags & window_flag::RESIZABLE) ? SDL_WINDOW_RESIZABLE : 0);
+#endif
     if (!window) {
         spdlog::critical("SDL_CreateWindow failed: {}", SDL_GetError());
         std::abort();
@@ -637,7 +648,11 @@ void poll_window_events() {
     while (SDL_PollEvent(&e)) { // the game's input reads events through SDL event watches
         if (e.type == SDL_EVENT_QUIT) {
             should_close = true;
+#ifdef YATAIDON_USE_SDL2
+        } else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+#else
         } else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+#endif
             reset_backbuffer();
         }
     }
@@ -694,7 +709,12 @@ int get_render_height() {
 }
 
 int get_monitor_refresh_rate() {
+#ifdef YATAIDON_USE_SDL2
+    SDL_DisplayMode storage{};
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(window), &storage) == 0 ? &storage : nullptr;
+#else
     const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+#endif
     return mode ? (int)mode->refresh_rate : 0;
 }
 
@@ -731,6 +751,24 @@ void clear_background(Color color) {
 }
 
 RenderTarget load_render_texture(int width, int height) {
+    if (width <= 0 || height <= 0 || width > caps->limits.maxTextureSize || height > caps->limits.maxTextureSize) {
+        return {};
+    }
+    constexpr uint64_t depth_flags = BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY;
+    bgfx::TextureFormat::Enum depth_format = bgfx::TextureFormat::Count;
+    // Vulkan drivers need not support D24S8. Check before creation: bgfx may
+    // otherwise substitute a colour format, which cannot serve as depth.
+    for (auto format : {bgfx::TextureFormat::D24S8, bgfx::TextureFormat::D32F, bgfx::TextureFormat::D16}) {
+        if (bgfx::isTextureValid(0, false, 1, format, depth_flags)) {
+            depth_format = format;
+            break;
+        }
+    }
+    if (depth_format == bgfx::TextureFormat::Count ||
+        !bgfx::isTextureValid(0, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_RT)) {
+        spdlog::warn("bgfx: no supported colour/depth render target format");
+        return {};
+    }
     TargetSlot t;
     t.width = width;
     t.height = height;
@@ -738,12 +776,24 @@ RenderTarget load_render_texture(int width, int height) {
     color.handle =
         bgfx::createTexture2D((uint16_t)width, (uint16_t)height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_RT);
     bgfx::TextureHandle depth = bgfx::createTexture2D((uint16_t)width, (uint16_t)height, false, 1,
-                                                      bgfx::TextureFormat::D24S8, BGFX_TEXTURE_RT_WRITE_ONLY);
+                                                      depth_format, depth_flags);
+    if (!bgfx::isValid(color.handle) || !bgfx::isValid(depth)) {
+        if (bgfx::isValid(color.handle)) bgfx::destroy(color.handle);
+        if (bgfx::isValid(depth)) bgfx::destroy(depth);
+        return {};
+    }
     bgfx::Attachment att[2];
     att[0].init(color.handle, bgfx::Access::Write, 0, 1, 0, BGFX_ATTACHMENT_NONE);
     att[1].init(depth, bgfx::Access::Write, 0, 1, 0, BGFX_ATTACHMENT_NONE);
     t.fb = bgfx::createFrameBuffer(2, att, false);
-    bgfx::destroy(depth); // the framebuffer keeps it alive
+    bgfx::destroy(depth); // the framebuffer keeps it alive on success
+    if (!bgfx::isValid(t.fb)) {
+        bgfx::destroy(color.handle);
+        spdlog::warn("bgfx: failed to create {}x{} model framebuffer", width, height);
+        return {};
+    }
+    spdlog::info("bgfx: model framebuffer {}x{}, depth={}, handle={}",
+                 width, height, static_cast<int>(depth_format), t.fb.idx);
     t.color = add_slot(color);
 
     RenderTarget rt;

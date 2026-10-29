@@ -11,6 +11,7 @@
 #include "../../libs/input/input.h"
 
 CostumeMenu::CostumeMenu(PlayerNum player_num) : player_num(player_num), is_2p(player_num == PlayerNum::P2) {
+    PlayerSoundScope audio_owner(player_num);
     const SkinInfo* info = font_manager.get_text_info("entry_costume_text");
     std::string text_str = font_manager.get_text_label("entry_costume_text");
     float title_x = info ? info->x : 0.0f;
@@ -193,6 +194,7 @@ void CostumeMenu::apply_preset(const std::string& item) {
 }
 
 void CostumeMenu::update(double current_time_ms) {
+    PlayerSoundScope audio_owner(player_num);
     now_ms = current_time_ms;
     call(fn_update, "CostumeMenu:update", current_time_ms);
 }
@@ -218,6 +220,7 @@ std::string CostumeMenu::get_costume_name() const {
 }
 
 void CostumeMenu::handle_input() {
+    PlayerSoundScope audio_owner(player_num);
     if (fn_is_ready.valid() && !call_r<bool>(fn_is_ready, "CostumeMenu:is_ready").value_or(true)) {
         return;
     }
@@ -226,11 +229,11 @@ void CostumeMenu::handle_input() {
             int n = static_cast<int>(costume_icons.size());
             if (menu_left_pressed(player_num)) {
                 costume_icon_index = (costume_icon_index - 1 + n) % n;
-                audio.play_sound("kat", VolumePreset::SOUND);
+                audio.play_player_sound("kat", player_num, VolumePreset::SOUND);
             }
             if (menu_right_pressed(player_num)) {
                 costume_icon_index = (costume_icon_index + 1) % n;
-                audio.play_sound("kat", VolumePreset::SOUND);
+                audio.play_player_sound("kat", player_num, VolumePreset::SOUND);
             }
             if (menu_confirm_pressed(player_num)) {
                 if (pick_stage == CostumePickStage::HEAD) {
@@ -244,18 +247,18 @@ void CostumeMenu::handle_input() {
                 } else {
                     confirmed = true;
                 }
-                audio.play_sound("don", VolumePreset::SOUND);
+                audio.play_player_sound("don", player_num, VolumePreset::SOUND);
             }
         }
     } else {
         int prev_index = selected_index;
         if (menu_left_pressed(player_num)) {
             selected_index = (selected_index - 1 + NUM_ITEMS) % NUM_ITEMS;
-            audio.play_sound("kat", VolumePreset::SOUND);
+            audio.play_player_sound("kat", player_num, VolumePreset::SOUND);
         }
         if (menu_right_pressed(player_num)) {
             selected_index = (selected_index + 1) % NUM_ITEMS;
-            audio.play_sound("kat", VolumePreset::SOUND);
+            audio.play_player_sound("kat", player_num, VolumePreset::SOUND);
         }
         if (selected_index != prev_index) {
             if (is_preset_item(ITEMS[selected_index])) {
@@ -275,7 +278,7 @@ void CostumeMenu::handle_input() {
                     return;
                 }
                 costume_select_mode = true;
-                audio.play_sound("don", VolumePreset::SOUND);
+                audio.play_player_sound("don", player_num, VolumePreset::SOUND);
             } else if (std::string(ITEMS[selected_index]) == "costume_select/head_body") {
                 pick_stage = CostumePickStage::HEAD;
                 picked_head_id = -1;
@@ -285,14 +288,14 @@ void CostumeMenu::handle_input() {
                     return;
                 }
                 costume_select_mode = true;
-                audio.play_sound("don", VolumePreset::SOUND);
+                audio.play_player_sound("don", player_num, VolumePreset::SOUND);
             } else if (is_preset_item(ITEMS[selected_index])) {
                 if (!preset_cos_id) {
                     apply_preset(ITEMS[selected_index]);
                 }
                 if (preset_cos_id) {
                     confirmed = true;
-                    audio.play_sound("don", VolumePreset::SOUND);
+                    audio.play_player_sound("don", player_num, VolumePreset::SOUND);
                 }
             }
         }
@@ -300,6 +303,7 @@ void CostumeMenu::handle_input() {
 }
 
 void CostumeMenu::draw() {
+    PlayerSoundScope audio_owner(player_num);
     const float x = pos_x, y = pos_y;
     call(fn_draw_bg, "CostumeMenu:draw_bg", x, y, selected_index, costume_select_mode, preset_seq,
          static_cast<int>(pick_stage));

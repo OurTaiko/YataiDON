@@ -24,9 +24,10 @@ void TitleScreen::on_screen_start() {
                                                     Color::WHITE, Color::BLACK, false, 4);
     fade_out = dynamic_cast<FadeAnimation*>(tex.get_animation(13));
     text_overlay_fade = dynamic_cast<FadeAnimation*>(tex.get_animation(14));
-    if (text_overlay_fade) {
-        text_overlay_fade->start();
+    if (!fade_out || !text_overlay_fade) {
+        throw std::runtime_error("Title skin animations 13 and 14 must be FadeAnimation objects");
     }
+    text_overlay_fade->start();
 
     // Session over: undo card-login access code overrides
     for (int i = 0; i < 2; i++) {
@@ -171,7 +172,9 @@ void TitleScreen::scene_manager(double current_ms) {
 }
 
 std::optional<Screens> TitleScreen::update() {
-    Screen::update();
+    if (auto next = Screen::update()) {
+        return next;
+    }
     double current_ms = get_current_ms();
 
     text_overlay_fade->update(current_ms);

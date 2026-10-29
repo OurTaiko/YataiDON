@@ -1,4 +1,5 @@
 #include "chara_3d.h"
+#include "../../platform/platform.h"
 
 #include <algorithm>
 #include <cmath>
@@ -409,6 +410,16 @@ static void init_shaders(Shader& outline_fxaa_shader, int& outline_fxaa_size_loc
     outline_fxaa_thickness_loc = get_shader_location(outline_fxaa_shader, "outlineThickness");
     float outline_thickness = 3.0f;
     set_shader_value(outline_fxaa_shader, outline_fxaa_thickness_loc, &outline_thickness, shader_uniform::FLOAT);
+
+    // bgfx uniforms are shared by name, while their values are cached per
+    // shader program. Untinted characters must submit neutral values too,
+    // otherwise a previous character/scene's Go-Go or miss tint remains active.
+    const float tint_color[3] = {0.0f, 0.0f, 0.0f};
+    const float tint_amount = 0.0f;
+    set_shader_value(outline_fxaa_shader, get_shader_location(outline_fxaa_shader, "tintColor"), tint_color,
+                     shader_uniform::VEC3);
+    set_shader_value(outline_fxaa_shader, get_shader_location(outline_fxaa_shader, "tintAmount"), &tint_amount,
+                     shader_uniform::FLOAT);
 
     null_shader = load_shader(nullptr, "shader/null.fs");
     face_shader = load_shader(nullptr, "shader/face.fs");
@@ -902,9 +913,8 @@ void Chara3D::draw_3d(float x, float y) {
     }
 }
 
-// Render at 2x and downscale on blit: bilinear-filtered supersampling ahead of the
-// FXAA pass, since raylib render textures have no MSAA path that stays GLES/Android-safe.
-static constexpr float SUPERSAMPLE = 2.0f;
+// Supersampling before the FXAA pass; rw/rh come from GetRenderWidth/Height.
+static const float SUPERSAMPLE = platform_supersample();
 
 // Screen rectangle (render pixels) of the posed model: the CPU-skinned vertices (animVertices,
 // see UpdateModelAnimation) through the same transform draw_3d uses, then the orthographic

@@ -20,6 +20,7 @@ static void apply_pd_look(Chara3D& chara, PlayerData* pd, PlayerNum player_num) 
 
 EntryPlayer::EntryPlayer(PlayerNum player_num, int side, BoxManager* box_manager)
     : player_num(player_num), side(side), box_manager(box_manager) {
+    PlayerSoundScope audio_owner(player_num);
     indicator = std::make_unique<Indicator>(Indicator::State::SELECT);
 
     std::string player_id = get_player_id(player_num);
@@ -74,6 +75,7 @@ void EntryPlayer::start_animations(bool hold_cloud) {
 }
 
 void EntryPlayer::update(double current_time) {
+    PlayerSoundScope audio_owner(player_num);
     call(fn_update, "EntryPlayer:update", current_time);
     nameplate->update(current_time);
     indicator->update(current_time);
@@ -85,7 +87,7 @@ void EntryPlayer::update(double current_time) {
 
 void EntryPlayer::open_costume_menu() {
     costume_menu.emplace(player_num);
-    audio.play_sound("select_costume", VolumePreset::VOICE);
+    audio.play_player_sound("select_costume", player_num, VolumePreset::VOICE);
     preset_seq_applied = 0;
 }
 
@@ -102,6 +104,7 @@ void EntryPlayer::draw_drum() {
 }
 
 void EntryPlayer::draw_costume_menu() {
+    PlayerSoundScope audio_owner(player_num);
     if (!costume_menu) {
         return;
     }
@@ -122,6 +125,7 @@ float EntryPlayer::get_nameplate_fadein() {
 }
 
 void EntryPlayer::handle_input() {
+    PlayerSoundScope audio_owner(player_num);
     if (costume_menu) {
         costume_menu->handle_input();
         if (int seq = costume_menu->get_preset_seq(); seq != preset_seq_applied) {
@@ -202,7 +206,7 @@ void EntryPlayer::handle_input() {
             chara_index = -1;
             chara_pick_stage = CostumePickStage::NONE;
             if (parsed) {
-                audio.play_sound("costume_select_" + std::to_string(static_cast<int>(player_num)) + "p",
+                audio.play_player_sound("costume_select_" + std::to_string(static_cast<int>(player_num)) + "p", player_num,
                                  VolumePreset::VOICE);
                 chara->set_anim(AnimIndex::DON_BALLOON_SUCCESS);
             }
@@ -214,7 +218,7 @@ void EntryPlayer::handle_input() {
     }
 
     if (menu_confirm_pressed(player_num)) {
-        audio.play_sound("don", VolumePreset::SOUND);
+        audio.play_player_sound("don", player_num, VolumePreset::SOUND);
         if (box_manager->is_costume_box()) {
             box_manager->open_costume_menu(player_num);
         } else {
@@ -222,11 +226,11 @@ void EntryPlayer::handle_input() {
         }
     }
     if (menu_left_pressed(player_num)) {
-        audio.play_sound("kat", VolumePreset::SOUND);
+        audio.play_player_sound("kat", player_num, VolumePreset::SOUND);
         box_manager->move_left();
     }
     if (menu_right_pressed(player_num)) {
-        audio.play_sound("kat", VolumePreset::SOUND);
+        audio.play_player_sound("kat", player_num, VolumePreset::SOUND);
         box_manager->move_right();
     }
 }

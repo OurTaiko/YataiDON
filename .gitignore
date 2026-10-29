@@ -34,3 +34,18 @@ YataiDON.wasm
 /.ios-ffmpeg/
 /Songs/14 Favorites/song_list.txt
 /Songs/15 Recently Played/song_list.txt
+/ps5/vendor/
+/ps5/build/
+/ps5/build-game/
+/ps5/package/
+/ps5/dist/
+/ps5/*.log
+/ps5/downloaded-skins/
+/ps5/__pycache__/
+/ps5/console-*
+/ps5/system-module-names.txt
+/ps5/migration-files.json
+/ps5/**/__pycache__/
+
+/ps5/build-vulkan/
+/ps5/build-host-bgfx/

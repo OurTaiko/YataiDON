@@ -45,6 +45,8 @@ static_assert(SDL_VERSION_ATLEAST(2, 0, 14), "SDL2 compat needs SDL 2.0.14 or ne
 
 using SDL_IOStream = SDL_RWops;
 
+#define SDL_BUTTON_MASK SDL_BUTTON
+#define SDL_EVENT_QUIT SDL_QUIT
 #define SDL_EVENT_TEXT_INPUT SDL_TEXTINPUT
 #define SDL_EVENT_KEY_DOWN SDL_KEYDOWN
 #define SDL_EVENT_KEY_UP SDL_KEYUP
@@ -128,10 +130,12 @@ inline bool SDL_IsGamepad(SDL_JoystickID id) {
 }
 using SDL_Gamepad = SDL_GameController;
 using SDL_GamepadButton = SDL_GameControllerButton;
+#define SDL_ScreenKeyboardShown SDL_IsScreenKeyboardShown
 #define SDL_GAMEPAD_BUTTON_SOUTH SDL_CONTROLLER_BUTTON_A
 #define SDL_GAMEPAD_BUTTON_EAST SDL_CONTROLLER_BUTTON_B
 #define SDL_GAMEPAD_BUTTON_WEST SDL_CONTROLLER_BUTTON_X
 #define SDL_GAMEPAD_BUTTON_NORTH SDL_CONTROLLER_BUTTON_Y
+#define SDL_GAMEPAD_BUTTON_TOUCHPAD SDL_CONTROLLER_BUTTON_TOUCHPAD
 #define SDL_GAMEPAD_BUTTON_BACK SDL_CONTROLLER_BUTTON_BACK
 #define SDL_GAMEPAD_BUTTON_GUIDE SDL_CONTROLLER_BUTTON_GUIDE
 #define SDL_GAMEPAD_BUTTON_START SDL_CONTROLLER_BUTTON_START
@@ -228,8 +232,11 @@ inline bool SDL_PutAudioStreamData(YD_AudioStream* s, const void* data, int len)
 
 // Device IDs on SDL2 are enumeration index + 1 so that 0 stays invalid.
 inline SDL_AudioDeviceID* SDL_GetAudioPlaybackDevices(int* count) {
+    if (count) *count = 0;
     const int n = SDL_GetNumAudioDevices(0);
+    if (n <= 0) return nullptr;
     auto* ids = static_cast<SDL_AudioDeviceID*>(SDL_malloc((n + 1) * sizeof(SDL_AudioDeviceID)));
+    if (!ids) return nullptr;
     for (int i = 0; i < n; i++) {
         ids[i] = static_cast<SDL_AudioDeviceID>(i + 1);
     }
@@ -270,6 +277,10 @@ inline YD_AudioStream* SDL_OpenAudioDeviceStream(SDL_AudioDeviceID devid, const 
     yd_last_audio_stream() = s;
     return s; // starts paused, like SDL3
 }
+inline bool SDL_PauseAudioStreamDevice(YD_AudioStream* s) {
+    SDL_PauseAudioDevice(s->dev, 1);
+    return true;
+}
 inline bool SDL_ResumeAudioStreamDevice(YD_AudioStream* s) {
     SDL_PauseAudioDevice(s->dev, 0);
     return true;
@@ -302,6 +313,12 @@ inline bool SDL_GetAudioDeviceFormat(SDL_AudioDeviceID, SDL_AudioSpec* spec, int
 }
 
 #endif // YATAIDON_USE_SDL2
+
+#ifdef YATAIDON_USE_SDL2
+inline void SDL_GetWindowSizeInPixels(SDL_Window* window, int* w, int* h) {
+    SDL_GetWindowSize(window, w, h);
+}
+#endif
 
 // The game's (only) window, or nullptr before init_window(). Owned by the gfx backend.
 SDL_Window* main_window();

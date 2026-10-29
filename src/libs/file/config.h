@@ -8,6 +8,12 @@
 
 namespace fs = std::filesystem;
 
+struct Config;
+// Platform overrides applied after config.toml is read, and extra keys written when saving
+// (implemented per platform; no-ops on most).
+void platform_load_config(Config& config, const toml::table& file);
+void platform_save_config(const Config& config, toml::table& out);
+
 struct GeneralConfig {
     bool fps_counter = false;
     int audio_offset = 0;
@@ -59,6 +65,8 @@ struct KeysConfig {
     int pause_key = 0;
     int back_key = 0;
     int restart_key = 0;
+    // Menus use a fixed gamepad layout instead of the drum bindings (see input.cpp)
+    bool gamepad_menu_layout = false;
 };
 
 struct Keys1PConfig {

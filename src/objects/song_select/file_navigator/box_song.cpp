@@ -6,6 +6,14 @@
 #include "../../../libs/audio/audio.h"
 #include "../../../libs/gfx/text.h"
 #include "navigator.h"
+#include "../../../libs/latest_worker.h"
+#include "../../../platform/platform.h"
+
+// Decodes previews off the UI thread; a newer request replaces a pending one, never joined.
+static LatestWorker& preview_worker() {
+    static LatestWorker worker;
+    return worker;
+}
 
 namespace {
     double bgm_resume_at = 0.0; // 0 = nothing pending
@@ -90,15 +98,13 @@ std::string SongBox::hash_for(int difficulty) {
 }
 
 void SongBox::reset() {
+    if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
     BaseBox::reset();
     diff_fade_in = dynamic_cast<FadeAnimation*>(tex.get_animation(12));
     if (audio.is_music_stream_valid("preview")) {
         audio.unload_music_stream("preview");
     }
     music_playing = false;
-    if (preview_thread.joinable()) {
-        preview_thread.join();
-    }
     preview_load.reset();
     preview_attempted = false;
     release_preview_slot();
@@ -160,20 +166,26 @@ void SongBox::update(double current_time) {
     // wait that long rather than polling the animation, which the Lua skin now drives.
     bool box_opened = get_current_ms() - bar_open_started_at > 350;
 
-    if (is_bank && yellow_box_active && !music_playing && !preview_load && !preview_attempted &&
+    // Banks are always decoded ahead; plain audio streams from disk unless the platform preloads.
+    const bool preload = is_bank || (is_stream && platform_preload_song_previews());
+    if (preload && yellow_box_active && !music_playing && !preview_load && !preview_attempted &&
         get_current_ms() - bar_open_started_at > 250) {
         preview_attempted = true;
         preview_load = std::make_shared<PreviewLoad>();
-        if (preview_thread.joinable()) {
-            preview_thread.join();
-        }
-        preview_thread = std::thread([state = preview_load, wave = parser.metadata.wave] {
-            state->ok = audio.prepare_nus3bank_pcm(wave, state->pcm, true);
+        preview_worker().submit([state = preview_load, wave = parser.metadata.wave, is_bank] {
+            try {
+                if (!state->cancelled.load(std::memory_order_relaxed)) {
+                    state->ok = is_bank ? audio.prepare_nus3bank_pcm(wave, state->pcm, true)
+                                        : audio.prepare_music_pcm(wave, state->pcm, state->cancelled);
+                }
+            } catch (const std::exception& error) {
+                spdlog::warn("Preview decode failed: {}", error.what());
+            }
             state->done.store(true, std::memory_order_release);
         });
     }
 
-    if (is_stream && yellow_box_active && box_opened && !music_playing) {
+    if (is_stream && !preload && yellow_box_active && box_opened && !music_playing) {
         audio.load_music_stream(parser.metadata.wave, "preview");
         if (audio.is_music_stream_valid("preview")) {
             music_playing = true;
@@ -232,11 +244,9 @@ void SongBox::release_preview_slot() {
 }
 
 void SongBox::close_box() {
+    if (preview_load) preview_load->cancelled.store(true, std::memory_order_relaxed);
     BaseBox::close_box();
     box_opened_at = 0.0;
-    if (preview_thread.joinable()) {
-        preview_thread.join();
-    }
     preview_load.reset();
     preview_attempted = false;
     release_preview_slot();

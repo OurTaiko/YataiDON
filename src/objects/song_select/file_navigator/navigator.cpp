@@ -2820,7 +2820,9 @@ void Navigator::update(double current_ms) {
             // their side instead (not from where they were: the list wraps, so that can be the far side)
             if (!vertical_gallery) {
                 const float center = items[open_index]->position;
-                for (const auto& [box, previous] : std::views::zip(items, before)) {
+                for (size_t i = 0; i < std::min(items.size(), before.size()); ++i) {
+                    const auto& box = items[i];
+                    const float previous = before[i];
                     const float to = box->position;
                     const bool was_off = previous > tex.screen_width || previous < -100.0f;
                     if (to == previous || !was_off || to < -100.0f || to > tex.screen_width) {

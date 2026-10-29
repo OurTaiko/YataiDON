@@ -84,6 +84,9 @@ Screens SettingsScreen::on_screen_end(Screens next_screen) {
 }
 
 std::optional<Screens> SettingsScreen::handle_input() {
+    if (!box_manager->editing() && check_key_pressed(global_data.config->keys.back_key)) {
+        return on_screen_end(Screens::ENTRY);
+    }
     if (key_pressed(SDL_SCANCODE_F1)) {
         return on_screen_end(Screens::INPUT_CALI);
     }
@@ -117,9 +120,16 @@ std::optional<Screens> SettingsScreen::update() {
     double current_time = get_current_ms();
     allnet_indicator->update(current_time);
     indicator->update(current_time);
+    const bool was_editing_text = box_manager->editing_text();
     box_manager->update(current_time);
     if (auto screen = box_manager->pending_screen_change()) {
         return on_screen_end(*screen);
+    }
+    // The field consumes Return/Escape during update(). Keep that entire frame
+    // in text-edit mode so the same key cannot reopen it or leave settings.
+    if (was_editing_text || box_manager->editing_text()) {
+        clear_input_buffers();
+        return std::nullopt;
     }
     return handle_input();
 }

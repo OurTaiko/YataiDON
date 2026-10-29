@@ -5,6 +5,7 @@
 
 #include "../../../libs/gfx/text.h"
 #include "color_utils.h"
+#include "../../../libs/color_shader.h"
 
 BaseBox::BaseBox(fs::path path, const BoxDef& box_def)
     : path(std::move(path)), texture_index(box_def.texture_index), genre_index(box_def.genre_index),
@@ -29,11 +30,7 @@ BaseBox::BaseBox(fs::path path, const BoxDef& box_def)
     fade_in(100);
 }
 
-BaseBox::~BaseBox() {
-    if (shader_loaded) {
-        unload_shader(shader);
-    }
-}
+BaseBox::~BaseBox() = default;
 
 void BaseBox::preregister_text() {
     float font_size = tex.get_skin_config(SC::SONG_SELECT_BOX_NAME)->font_size;
@@ -51,15 +48,9 @@ void BaseBox::load_text() {
     name = make_unique<OutlinedText>(text_name, font_size, text_color, fore_color, true);
 
     if (back_color.has_value()) {
-        shader = load_shader("shader/dummy.vs", "shader/colortransform.fs");
-        shader_loaded = true;
-        const auto& target_rgb = back_color.value();
-        float src[3] = {142 / 255.0f, 212 / 255.0f, 30 / 255.0f};
-        float tgt[3] = {target_rgb.r / 255.0f, target_rgb.g / 255.0f, target_rgb.b / 255.0f};
-        int source_loc = get_shader_location(shader, "sourceColor");
-        int target_loc = get_shader_location(shader, "targetColor");
-        set_shader_value(shader, source_loc, src, shader_uniform::VEC3);
-        set_shader_value(shader, target_loc, tgt, shader_uniform::VEC3);
+        shader_owner = load_color_shader(back_color.value());
+        shader = *shader_owner;
+        shader_loaded = is_shader_valid(shader);
     }
 
     text_loaded = true;

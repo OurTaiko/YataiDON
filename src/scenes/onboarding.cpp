@@ -101,6 +101,14 @@ void OnboardingScreen::begin_download() {
         error = "Select at least one skin";
         return;
     }
+    if (!SkinUpdater::available()) {
+        for (int i = 0; i < kSkinCount; ++i) {
+            if (selected[i] && !installed[i]) {
+                error = "Install selected skins in " + fs::absolute("Skins").string() + " first";
+                return;
+            }
+        }
+    }
     downloading = true;
     download_started = false;
 }
@@ -195,6 +203,16 @@ std::optional<Screens> OnboardingScreen::update() {
         return on_screen_end(skinless_start ? Screens::LOADING : Screens::TITLE);
     }
 
+    // Up/Down (arrows or D-pad) move between rows; the drum-only scheme below still works
+    const int rows = kSkinCount + 2;
+    if (key_pressed(SDL_SCANCODE_UP) || check_key_pressed(10000 + 1)) {
+        row = (row + rows - 1) % rows;
+        return std::nullopt;
+    }
+    if (key_pressed(SDL_SCANCODE_DOWN) || check_key_pressed(10000 + 3)) {
+        row = (row + 1) % rows;
+        return std::nullopt;
+    }
     // drum-only: don moves down (starts the download on Continue), kat toggles the current row
     if (menu_confirm_pressed()) {
         if (row == continue_row()) {
@@ -259,5 +277,6 @@ void OnboardingScreen::draw() {
     if (!error.empty()) {
         draw_line(error, 565 * s, static_cast<int>(22 * s), Color::RED);
     }
-    draw_line("Don: next / continue    Ka: toggle", 650 * s, static_cast<int>(20 * s), Color::GRAY);
+    draw_line("Don: next / continue    Ka: toggle    Up/Down: move", 650 * s, static_cast<int>(20 * s),
+              Color::GRAY);
 }

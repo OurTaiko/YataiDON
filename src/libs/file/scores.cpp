@@ -516,7 +516,7 @@ void ScoresManager::py_taiko_import(const fs::path& old_db_path) {
 
     sqlite3_finalize(sel);
     sqlite3_close(old_db);
-    spdlog::info("py_taiko_import: done — {} imported, {} skipped", imported, skipped);
+    spdlog::info("py_taiko_import: done â€” {} imported, {} skipped", imported, skipped);
 
     if (imported > 0) {
         load_score_cache();
@@ -951,7 +951,7 @@ std::optional<PlayerData> ScoresManager::get_player_data(const std::string& play
     if (sqlite3_step(stmt) != SQLITE_ROW) {
         sqlite3_finalize(stmt);
 
-        // Player not found — insert a default row with the requested player_id
+        // Player not found â€” insert a default row with the requested player_id
         sqlite3_stmt* ins;
         const char* ins_query =
             "INSERT OR IGNORE INTO players (player_id, username, title, title_bg, chara_color_1, chara_color_2) "

@@ -1,0 +1,144 @@
+--- a/bx/src/allocator.cpp
++++ b/bx/src/allocator.cpp
+@@ -5,7 +5,11 @@
+ 
+ #include <bx/allocator.h>
+ 
++#if BX_PLATFORM_PS5
++#include <stdlib.h>
++#else
+ #include <malloc.h>
++#endif
+ 
+ #ifndef BX_CONFIG_ALLOCATOR_NATURAL_ALIGNMENT
+ #	define BX_CONFIG_ALLOCATOR_NATURAL_ALIGNMENT 8
+--- a/bgfx/src/renderer_vk.cpp
++++ b/bgfx/src/renderer_vk.cpp
+@@ -9,6 +9,25 @@
+ #	include <bx/pixelformat.h>
+ #	include "renderer_vk.h"
+ #	include "video_vk.h"
++#if BX_PLATFORM_PS5
++extern "C" PFN_vkVoidFunction yataidon_ps5_vk_proc(const char* name);
++extern "C" VkResult yataidon_ps5_vk_surface(void* window, VkInstance instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
++#endif
++static void yataidonClose(void* library) {
++#if BX_PLATFORM_PS5
++    BX_UNUSED(library);
++#else
++    bx::dlclose(library);
++#endif
++}
++static void* yataidonLookup(void* library, const char* name) {
++#if BX_PLATFORM_PS5
++    BX_UNUSED(library); return (void*)yataidon_ps5_vk_proc(name);
++#else
++    return bx::dlsym(library, name);
++#endif
++}
++
+ 
+ #if BX_PLATFORM_OSX
+ #	import <Cocoa/Cocoa.h>
+@@ -416,6 +435,8 @@
+ 			KHR_win32_surface,
+ #	elif BX_PLATFORM_OSX
+ 			MVK_macos_surface,
++#	elif BX_PLATFORM_PS5
++			KHR_display,
+ #	elif BX_PLATFORM_NX
+ 			NN_vi_surface,
+ #	endif
+@@ -468,6 +489,8 @@
+ 		{ VK_KHR_WIN32_SURFACE_EXTENSION_NAME,      1, false, false, true,                                                          Layer::Count },
+ #	elif BX_PLATFORM_OSX
+ 		{ VK_MVK_MACOS_SURFACE_EXTENSION_NAME,      1, false, false, true,                                                          Layer::Count },
++#	elif BX_PLATFORM_PS5
++		{ VK_KHR_DISPLAY_EXTENSION_NAME, 1, true, false, true, Layer::Count },
+ #	elif BX_PLATFORM_NX
+ 		{ VK_NN_VI_SURFACE_EXTENSION_NAME,          1, false, false, true,                                                          Layer::Count },
+ #	endif
+@@ -521,6 +544,8 @@
+ 			;
+ #elif BX_PLATFORM_OSX
+ 		return s_extension[Extension::MVK_macos_surface].m_supported;
++#elif BX_PLATFORM_PS5
++		return s_extension[Extension::KHR_display].m_supported;
+ #elif BX_PLATFORM_NX
+ 		return s_extension[Extension::NN_vi_surface].m_supported;
+ #else
+@@ -1436,6 +1461,9 @@
+ 				|| NULL != findModule("Nvda.Graphics.Interception.dll")
+ 				);
+ 
++#if BX_PLATFORM_PS5
++			m_vulkan1Dll = (void*)1;
++#else
+ 			m_vulkan1Dll = bx::dlopen(
+ #if BX_PLATFORM_WINDOWS
+ 				"vulkan-1.dll"
+@@ -1448,6 +1476,8 @@
+ #endif // BX_PLATFORM_*
+ 				);
+ 
++#endif
++
+ 			if (NULL == m_vulkan1Dll)
+ 			{
+ 				BX_TRACE("Init error: Failed to load vulkan dynamic library.");
+@@ -1459,7 +1489,7 @@
+ 			BX_TRACE("Shared library functions:");
+ 
+ #define VK_IMPORT_FUNC(_optional, _func)                                 \
+-	_func = (PFN_##_func)bx::dlsym(m_vulkan1Dll, #_func);                \
++	_func = (PFN_##_func)yataidonLookup(m_vulkan1Dll, #_func);                \
+ 	BX_TRACE("\t%16p %s" #_func, _func, _optional ? "[opt]" : "     ");  \
+ 	imported &= _optional || NULL != _func
+ VK_IMPORT
+@@ -2771,7 +2801,7 @@
+ 				[[fallthrough]];
+ 
+ 			case ErrorState::LoadedVulkan1:
+-				bx::dlclose(m_vulkan1Dll);
++				yataidonClose(m_vulkan1Dll);
+ 				m_vulkan1Dll  = NULL;
+ 				m_allocatorCb = NULL;
+ 				unloadRenderDoc(m_renderDocDll);
+@@ -2857,7 +2887,7 @@
+ 
+ 			vkDestroyInstance(m_instance, m_allocatorCb);
+ 
+-			bx::dlclose(m_vulkan1Dll);
++			yataidonClose(m_vulkan1Dll);
+ 			m_vulkan1Dll  = NULL;
+ 			m_allocatorCb = NULL;
+ 			unloadRenderDoc(m_renderDocDll);
+@@ -9345,6 +9375,8 @@
+ 				BX_WARN(VK_SUCCESS == result, "vkCreateMacOSSurfaceMVK failed %d: %s.", result, getName(result) );
+ 			}
+ 		}
++#elif BX_PLATFORM_PS5
++		result = yataidon_ps5_vk_surface(_nwh, _instance, _allocatorCb, _surface);
+ #elif BX_PLATFORM_NX
+ 		if (NULL != vkCreateViSurfaceNN)
+ 		{
+--- a/cmake/bgfx/bgfx.cmake
++++ b/cmake/bgfx/bgfx.cmake
+@@ -110,7 +110,7 @@
+ 
+ # directx-headers
+ set(DIRECTX_HEADERS)
+-if(UNIX
++if(UNIX AND NOT PS5 AND NOT YATAIDON_BGFX_TOOLS_ONLY
+    AND NOT APPLE
+    AND NOT EMSCRIPTEN
+    AND NOT ANDROID
+@@ -173,7 +173,7 @@
+ 	endif()
+ endif()
+ 
+-if(UNIX
++if(UNIX AND NOT PS5 AND NOT YATAIDON_BGFX_TOOLS_ONLY
+    AND NOT APPLE
+    AND NOT EMSCRIPTEN
+    AND NOT ANDROID

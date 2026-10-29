@@ -664,3 +664,7 @@ void win32_close_portaudio() {
         Pa_Terminate();
     }
 }
+
+bool platform_retains_assets() {
+    return true;
+}

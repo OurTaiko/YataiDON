@@ -45,8 +45,8 @@ std::optional<Screens> Game2PScreen::update() {
     }
 
     double current_time = get_current_ms();
-    transition->update(current_time);
     clock.update(current_time);
+    transition->update(current_time);
     update_gameplay(current_time);
     result_transition.update(current_time);
 
@@ -63,7 +63,7 @@ std::optional<Screens> Game2PScreen::update() {
         end_song(end_time, transition_delay, BackgroundNotification::Disabled);
     }
 
-    if (key_pressed(global_data.config->keys.restart_key)) {
+    if (check_key_pressed(global_data.config->keys.restart_key)) {
         restart_song();
     }
     if (check_key_pressed(global_data.config->keys.back_key)) {

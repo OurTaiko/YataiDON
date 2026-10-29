@@ -964,7 +964,8 @@ void ScriptManager::register_lua_bindings() {
     sol::table audio_tbl = lua.create_table();
 
     audio_tbl.set_function(
-        "play_sound", [](const std::string& name, sol::optional<std::string> preset_str, sol::optional<bool> loop) {
+        "play_sound", [](const std::string& name, sol::optional<std::string> preset_str, sol::optional<bool> loop,
+                         sol::optional<int> player) {
             struct NamedPreset {
                 std::string_view name;
                 VolumePreset preset;
@@ -985,8 +986,9 @@ void ScriptManager::register_lua_bindings() {
                     preset = match->preset;
                 }
             }
-
-            audio.set_sound_loop(name, loop.value_or(false));
+            PlayerSoundScope audio_owner(preset == VolumePreset::MUSIC ? PlayerNum::ALL :
+                static_cast<PlayerNum>(player.value_or(PlayerSoundScope::player())));
+            audio.set_sound_loop(name, loop.value_or(is_bgm_sound(name)));
             audio.play_sound(name, preset);
         });
 

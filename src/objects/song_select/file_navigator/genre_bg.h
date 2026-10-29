@@ -7,9 +7,6 @@ class GenreBG {
 public:
     GenreBG(const std::string& text_name, std::optional<Color> color, TextureIndex texture_index, float distance);
     ~GenreBG() {
-        if (shader_loaded) {
-            unload_shader(shader);
-        }
     }
 
     void update(double current_ms, FolderBox* box);
@@ -42,6 +39,7 @@ public:
 
 private:
     Shader shader;
+    std::shared_ptr<Shader> shader_owner;
     bool shader_loaded = false;
     std::unique_ptr<OutlinedText> name;
     TextureIndex texture_index;

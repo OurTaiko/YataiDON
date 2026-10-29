@@ -3,13 +3,15 @@
 #include "../file/config.h"
 #include "../gfx/sdl_compat.h"
 #include "../video/av.h"
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#include "../../platform/platform.h"
+#if defined(YATAIDON_HAS_RTAUDIO)
 #include <RtAudio.h>
 #endif
 #ifdef _WIN32
 #include <portaudio.h>
 #endif
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -40,22 +42,47 @@ struct VirtualFile {
     sf_count_t pos = 0;
 };
 
-struct sound {
-    float* data = nullptr;        // Audio sample data (interleaved stereo or mono)
-    unsigned int frame_count = 0; // Total number of frames in the sound
-    unsigned int sample_rate = 0; // Original sample rate of the audio
-    unsigned int channels = 0;    // Number of channels (1 = mono, 2 = stereo)
+enum class PlayerNum;
 
+// Background music sounds ("bgm", "*_bgm") loop unless a caller says otherwise.
+inline bool is_bgm_sound(const std::string& name) { return name == "bgm" || name.ends_with("_bgm"); }
+
+// Player-owned callbacks (including skin Lua calls) inherit this audio owner.
+class PlayerSoundScope {
+    int previous;
+    static thread_local int current;
+public:
+    explicit PlayerSoundScope(PlayerNum player);
+    ~PlayerSoundScope();
+    PlayerSoundScope(const PlayerSoundScope&) = delete;
+    PlayerSoundScope& operator=(const PlayerSoundScope&) = delete;
+    static int player() { return current; }
+};
+
+struct SoundPlayback {
     bool is_playing = false;        // Whether the sound is currently playing
     unsigned int current_frame = 0; // Current playback position in frames
     float frame_frac = 0.0f;        // Fractional part of playback position (for pitch != 1.0)
     bool loop = false;              // Whether to loop the sound
 
-    float normalization_gain = 1.0f;
     float volume = 1.0f; // Volume multiplier (0.0 to 1.0+)
     float playback_gain = 1.0f;
     float pan = 0.5f;   // Stereo pan (0.0 = left, 0.5 = center, 1.0 = right)
     float pitch = 1.0f; // Pitch/speed multiplier (1.0 = normal)
+
+};
+
+struct sound : SoundPlayback {
+    std::shared_ptr<float[]> cached_data; // owns `data` when shared with the asset cache
+    float* data = nullptr;        // Audio sample data (interleaved stereo or mono)
+    unsigned int frame_count = 0; // Total number of frames in the sound
+    unsigned int sample_rate = 0; // Original sample rate of the audio
+    unsigned int channels = 0;    // Number of channels (1 = mono, 2 = stereo)
+
+    float normalization_gain = 1.0f;
+    // Independent cursors over the same immutable PCM, so simultaneous hits
+    // from both players neither restart each other nor copy sample buffers.
+    std::array<SoundPlayback, 2> player_playback;
 
     SRC_STATE* resampler = nullptr;   // libsamplerate state (if needed)
     float* resample_buffer = nullptr; // Buffer for resampled audio
@@ -117,6 +144,9 @@ public:
     void unload_all_sounds();
     void store_sound(const std::string& name, const sound& snd);
     void play_sound(const std::string& name, VolumePreset volume_preset = VolumePreset::NONE, float gain = 1.0f);
+    void play_player_sound(const std::string& name, PlayerNum player,
+                           VolumePreset preset = VolumePreset::NONE, float gain = 1.0f);
+    void set_two_player_mode(bool enabled);
     bool has_sound(const std::string& name);
     void stop_sound(const std::string& name);
     void set_sound_loop(const std::string& name, bool loop);
@@ -140,6 +170,8 @@ public:
         std::string source_path;
     };
     bool prepare_nus3bank_pcm(const fs::path& file_path, PreparedPCM& out, bool quick_resample = false);
+    // Decodes a whole song for a preview off the UI thread (see platform_preload_song_previews).
+    bool prepare_music_pcm(const fs::path& file_path, PreparedPCM& out, const std::atomic<bool>& cancelled);
     std::string load_music_stream_prepared(PreparedPCM&& pcm, const std::string& name);
 
     std::string load_music_stream(const fs::path& file_path, const std::string& name);
@@ -175,16 +207,20 @@ private:
     std::atomic<float> master_volume;
 
     SDL_AudioStream* sdl_stream = nullptr;
+    PlatformAudioDevice* platform_audio = nullptr; // platform's own output, if it has one
     bool sdl_audio_subsystem_initialized = false;
     std::vector<float> sdl_scratch_buffer;
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if defined(YATAIDON_HAS_RTAUDIO)
     RtAudio* rt_audio = nullptr; // ALSA/JACK/PulseAudio/OSS/CoreAudio/DirectSound/ASIO/WASAPI
 #endif
 #ifdef _WIN32
     PaStream* pa_stream = nullptr; // WDM-KS/MME
 #endif
 
+    bool two_player_mode = false; // protected by rw_lock
+    int sound_player(const std::string& name, VolumePreset preset = VolumePreset::NONE) const;
+    std::array<SoundPlayback*, 3> sound_playbacks(sound& sample, const std::string& name);
     std::unordered_map<std::string, sound> sounds;
     std::unordered_map<std::string, music> music_streams;
 
@@ -192,7 +228,7 @@ private:
     float loaded_sound_gain(const fs::path& file_path, const std::string& name);
     float loaded_song_gain(const fs::path& file_path);
 
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if defined(YATAIDON_HAS_RTAUDIO)
     bool init_rtaudio_device(RtAudio::Api api, const char* label);
 #endif
 #ifdef _WIN32
@@ -202,7 +238,7 @@ private:
 
     static void mix(float* out, unsigned int framesPerBuffer, AudioEngine* engine);
     static void sdl_audio_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount);
-#if !defined(__ANDROID__) && !defined(YATAIDON_PLATFORM_IOS) && !defined(__EMSCRIPTEN__)
+#if defined(YATAIDON_HAS_RTAUDIO)
     static int rt_audio_callback(void* outputBuffer, void* inputBuffer, unsigned int framesPerBuffer, double streamTime,
                                  unsigned int status, void* userData);
 #endif

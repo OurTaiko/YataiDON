@@ -55,6 +55,7 @@ public:
 
     void select_option();
     bool editing_text() const;
+    bool editing() const;
 
     void select();
 

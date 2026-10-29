@@ -7,6 +7,7 @@
 #include "../../libs/audio/audio.h"
 #include "../../libs/file/filesystem.h"
 #include "../../libs/input/input.h"
+#include "../../platform/platform.h"
 
 std::unique_ptr<BaseOptionBox> SettingsBox::make_option_box(const rapidjson::Value& opt) {
     if (!opt.HasMember("type") || !opt["type"].IsString() || !opt.HasMember("path") || !opt["path"].IsString()) {
@@ -32,7 +33,9 @@ std::unique_ptr<BaseOptionBox> SettingsBox::make_option_box(const rapidjson::Val
     std::map<std::string, std::string> values_map;
     if (opt.HasMember("values") && opt["values"].IsObject()) {
         for (auto it = opt["values"].MemberBegin(); it != opt["values"].MemberEnd(); ++it) {
-            values_map[it->name.GetString()] = localise(it->value);
+            if (platform_offers_setting(path, it->name.GetString())) {
+                values_map[it->name.GetString()] = localise(it->value);
+            }
         }
     }
 
@@ -115,6 +118,11 @@ SettingsBox::SettingsBox(std::string name, const std::string& label_text, const 
 
     if (options_json.IsObject()) {
         for (auto it = options_json.MemberBegin(); it != options_json.MemberEnd(); ++it) {
+            const auto& opt = it->value;
+            if (opt.IsObject() && opt.HasMember("path") && opt["path"].IsString() &&
+                !platform_offers_setting(opt["path"].GetString(), "")) {
+                continue;
+            }
             try {
                 options.push_back(make_option_box(it->value));
             } catch (const std::exception& e) {
@@ -201,7 +209,7 @@ void SettingsBox::select_option() {
     }
     options[option_index]->is_highlighted = !options[option_index]->is_highlighted;
     if (options[option_index]->needs_text_input()) {
-        set_keyboard_visible(options[option_index]->is_highlighted);
+        set_keyboard_visible(options[option_index]->is_highlighted, options[option_index]->text_input_value());
     }
     options[option_index]->confirm();
 }
@@ -209,6 +217,9 @@ void SettingsBox::select_option() {
 bool SettingsBox::editing_text() const {
     return !options.empty() && options[option_index]->is_highlighted && options[option_index]->needs_text_input();
 }
+
+// Any option capturing input (text, keybind, value list) owns the back key.
+bool SettingsBox::editing() const { return !options.empty() && options[option_index]->is_highlighted; }
 
 void SettingsBox::select() {
     in_box = true;

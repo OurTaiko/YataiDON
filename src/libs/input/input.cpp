@@ -1,9 +1,13 @@
 #include "input.h"
+#include "../../platform/platform.h"
 
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <span>
+#include <string_view>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <iterator>
 #include <map>
@@ -21,7 +25,7 @@
 #include "ime_ui.h"
 #include "spdlog/spdlog.h"
 
-#ifndef __EMSCRIPTEN__
+#if defined(YATAIDON_HAS_MIDI)
 #include <libremidi/libremidi.hpp>
 #ifdef _WIN32
 #include <roapi.h>
@@ -131,13 +135,109 @@ void set_touch_drum_enabled(bool enabled) {
 }
 
 static std::array<bool, SDL_SCANCODE_COUNT> previous_key_states{};
-static std::array<std::array<bool, 18>, 4> previous_gamepad_states{};
+static std::array<std::array<bool, 19>, 4> previous_gamepad_states{};
 
 // Gamepad/joystick buttons and axes are folded into the key space at these
 // offsets (config stores the bare button number).
 static constexpr int GAMEPAD_VKEY_BASE = 10000;
 static constexpr int AXIS_VKEY_BASE = 20000;
 static std::atomic<int> last_gamepad_vkey{0};
+// set_keyboard_visible started SDL's on-screen keyboard (only where the platform has one)
+static std::atomic<bool> screen_keyboard_started{false};
+// Each gamepad press is also reported once per pad slot, so 2P can tell the pads apart.
+static constexpr int PAD_SLOT_VKEY_BASE = 50000;
+static constexpr int pad_slot_key(int slot, int button) {
+    return PAD_SLOT_VKEY_BASE + slot * 100 + button;
+}
+
+// Pads keep the slot they were first seen in, so P1/P2 don't swap when another reconnects.
+class ControllerSlots {
+    std::array<int, 4> ids{-1, -1, -1, -1};
+
+public:
+    void update(std::span<const int> connected) {
+        for (auto& id : ids) {
+            if (std::ranges::find(connected, id) == connected.end()) {
+                id = -1;
+            }
+        }
+        for (int id : connected) {
+            if (slot(id) >= 0) {
+                continue;
+            }
+            auto empty = std::ranges::find(ids, -1);
+            if (empty != ids.end()) {
+                *empty = id;
+            }
+        }
+    }
+    int slot(int id) const {
+        auto found = id < 0 ? ids.end() : std::ranges::find(ids, id);
+        return found == ids.end() ? -1 : static_cast<int>(found - ids.begin());
+    }
+    int device(int slot) const { return ids[slot]; }
+    int count() const { return static_cast<int>(std::ranges::count_if(ids, [](int id) { return id >= 0; })); }
+};
+static ControllerSlots controller_slots;     // input thread only
+static std::atomic<int> slotted_gamepads{0}; // controller_slots.count(), for the game thread
+
+static bool is_gameplay_screen(std::string_view screen) {
+    return screen == "GAME" || screen == "GAME_2P" || screen == "GAME_DAN" || screen == "GAME_PRACTICE" ||
+           screen == "AI_GAME" || screen == "INPUT_TEST" || screen == "INPUT_CALI";
+}
+
+// With two pads in 2P, pad 1 plays P1 and pad 2 plays P2 even when their bindings overlap.
+// One pad keeps the shared behaviour, so a single controller can still be split between players.
+static bool separate_players() {
+    return global_data.current_screen == "GAME_2P" && slotted_gamepads.load(std::memory_order_relaxed) >= 2;
+}
+
+// Optional fixed gamepad layout for menus (keys.gamepad_menu_layout): D-pad/shoulders move,
+// South confirms, East/touchpad go back, Start restarts. It replaces the drum bindings in menus,
+// where pads whose drum layout uses the face buttons would otherwise confirm and go back at once.
+enum class MenuAction { None, Left, Right, Confirm };
+static constexpr int PAD_EAST = 6, PAD_START = 15, PAD_TOUCHPAD = 18;
+static constexpr MenuAction menu_action(int button) {
+    switch (button) {
+    case 1: case 4: case 9: return MenuAction::Left;
+    case 2: case 3: case 11: return MenuAction::Right;
+    case 7: return MenuAction::Confirm;
+    default: return MenuAction::None;
+    }
+}
+
+static bool uses_menu_layout() {
+    return global_data.config && global_data.config->keys.gamepad_menu_layout &&
+           !is_gameplay_screen(global_data.current_screen);
+}
+
+static bool menu_layout_pressed(MenuAction action, PlayerNum player, float* strength) {
+    if (player != PlayerNum::ALL && player != PlayerNum::P1 && player != PlayerNum::P2) {
+        return false;
+    }
+    const int first_slot = player == PlayerNum::P2 ? 1 : 0;
+    const int end_slot = player == PlayerNum::ALL ? 4 : first_slot + 1;
+    for (int slot = first_slot; slot < end_slot; ++slot) {
+        for (int button = 1; button <= 18; ++button) {
+            if (menu_action(button) == action && check_key_pressed(pad_slot_key(slot, button), strength)) {
+                // Consume the shared alias too, so a join press cannot also
+                // confirm another menu action in the same frame.
+                check_key_pressed(GAMEPAD_VKEY_BASE + button);
+                return true;
+            }
+        }
+    }
+    // Unassigned menu actions also accept injected/unmapped controller input.
+    // Explicit player checks must retain identity, especially for joining P2.
+    if (player == PlayerNum::ALL) {
+        for (int button = 1; button <= 18; ++button) {
+            if (menu_action(button) == action && check_key_pressed(GAMEPAD_VKEY_BASE + button, strength)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 bool is_input_key_pressed(const std::vector<int>& keys, const std::vector<int>& gamepad_buttons, float* strength) {
 
@@ -156,14 +256,36 @@ bool is_input_key_pressed(const std::vector<int>& keys, const std::vector<int>& 
                                [strength](int button) { return check_key_pressed(10000 + button, strength); });
 }
 
-static bool keys_held(const std::vector<int>& keys, const std::vector<int>& pad) {
+static bool player_input_pressed(const std::vector<int>& keys, const std::vector<int>& buttons,
+                                 PlayerNum player, float* strength) {
+    if (separate_players()) {
+        for (int key : keys) {
+            if (check_key_pressed(key, strength)) {
+                return true;
+            }
+        }
+        const int slot = player == PlayerNum::P2 ? 1 : 0;
+        return std::ranges::any_of(buttons, [slot, strength](int button) {
+            return check_key_pressed(pad_slot_key(slot, button), strength);
+        });
+    }
+    return is_input_key_pressed(keys, buttons, strength);
+}
+
+static bool keys_held(const std::vector<int>& keys, const std::vector<int>& pad, PlayerNum player) {
     for (int k : keys) {
         if (k >= 0 && k < std::ssize(previous_key_states) && previous_key_states[k]) {
             return true;
         }
     }
     for (int b : pad) {
-        if (b < 0 || b >= 18) {
+        if (b < 1 || b > 18) {
+            continue;
+        }
+        if (separate_players()) {
+            if (previous_gamepad_states[player == PlayerNum::P2 ? 1 : 0][b]) {
+                return true;
+            }
             continue;
         }
         for (auto& g : previous_gamepad_states) {
@@ -180,21 +302,27 @@ bool is_kat_held(bool left, PlayerNum player_num) {
     bool p1 = player_num == PlayerNum::P1 || player_num == PlayerNum::ALL;
     bool p2 = player_num == PlayerNum::P2 || player_num == PlayerNum::ALL;
     return (p1 && keys_held(left ? c.keys_1p.left_kat : c.keys_1p.right_kat,
-                            left ? c.gamepad_1p.left_kat : c.gamepad_1p.right_kat)) ||
+                            left ? c.gamepad_1p.left_kat : c.gamepad_1p.right_kat, PlayerNum::P1)) ||
            (p2 && keys_held(left ? c.keys_2p.left_kat : c.keys_2p.right_kat,
-                            left ? c.gamepad_2p.left_kat : c.gamepad_2p.right_kat));
+                            left ? c.gamepad_2p.left_kat : c.gamepad_2p.right_kat, PlayerNum::P2));
 }
 
 bool is_l_don_pressed(PlayerNum player_num, float* strength) {
+    if (player_num == PlayerNum::ALL && separate_players()) {
+        return is_l_don_pressed(PlayerNum::P1, strength) || is_l_don_pressed(PlayerNum::P2, strength);
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Confirm, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.left_don, global_data.config->gamepad_1p.left_don,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.left_don, global_data.config->gamepad_1p.left_don,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_L_DON, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.left_don, global_data.config->gamepad_2p.left_don,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.left_don, global_data.config->gamepad_2p.left_don,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -210,15 +338,21 @@ bool is_l_don_pressed(PlayerNum player_num, float* strength) {
 }
 
 bool is_r_don_pressed(PlayerNum player_num, float* strength) {
+    if (player_num == PlayerNum::ALL && separate_players()) {
+        return is_r_don_pressed(PlayerNum::P1, strength) || is_r_don_pressed(PlayerNum::P2, strength);
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Confirm, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.right_don, global_data.config->gamepad_1p.right_don,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.right_don, global_data.config->gamepad_1p.right_don,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_R_DON, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.right_don, global_data.config->gamepad_2p.right_don,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.right_don, global_data.config->gamepad_2p.right_don,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -246,15 +380,21 @@ bool menu_confirm_pressed(PlayerNum p) {
 }
 
 bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
+    if (player_num == PlayerNum::ALL && separate_players()) {
+        return is_l_kat_pressed(PlayerNum::P1, strength) || is_l_kat_pressed(PlayerNum::P2, strength);
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Left, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.left_kat, global_data.config->gamepad_1p.left_kat,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.left_kat, global_data.config->gamepad_1p.left_kat,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_L_KAT, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.left_kat, global_data.config->gamepad_2p.left_kat,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.left_kat, global_data.config->gamepad_2p.left_kat,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -270,15 +410,21 @@ bool is_l_kat_pressed(PlayerNum player_num, float* strength) {
 }
 
 bool is_r_kat_pressed(PlayerNum player_num, float* strength) {
+    if (player_num == PlayerNum::ALL && separate_players()) {
+        return is_r_kat_pressed(PlayerNum::P1, strength) || is_r_kat_pressed(PlayerNum::P2, strength);
+    }
+    if (uses_menu_layout()) {
+        return menu_layout_pressed(MenuAction::Right, player_num, strength);
+    }
     if (player_num == PlayerNum::P1) {
-        return is_input_key_pressed(global_data.config->keys_1p.right_kat, global_data.config->gamepad_1p.right_kat,
-                                    strength) ||
+        return player_input_pressed(global_data.config->keys_1p.right_kat, global_data.config->gamepad_1p.right_kat,
+                                    PlayerNum::P1, strength) ||
                check_key_pressed(TOUCH_R_KAT, strength);
     }
 
     if (player_num == PlayerNum::P2) {
-        return is_input_key_pressed(global_data.config->keys_2p.right_kat, global_data.config->gamepad_2p.right_kat,
-                                    strength);
+        return player_input_pressed(global_data.config->keys_2p.right_kat, global_data.config->gamepad_2p.right_kat,
+                                    PlayerNum::P2, strength);
     }
 
     if (player_num != PlayerNum::ALL) {
@@ -463,6 +609,12 @@ void poll_touch_once() {
 // Scan all keyboard keys once and push press/release events.
 // Used by the polling thread on desktop and called directly per-frame on web.
 void poll_keyboard_once() {
+    // A modal on-screen keyboard (a console dialog) owns the keys while it is up.
+    if (screen_keyboard_started.load(std::memory_order_relaxed)) {
+        if (SDL_Window* window = main_window(); window && SDL_ScreenKeyboardShown(window)) {
+            return;
+        }
+    }
     if (is_input_locked()) {
         return;
     }
@@ -511,32 +663,46 @@ void poll_keyboard_once() {
         {SDL_GAMEPAD_BUTTON_BACK, 13},         {SDL_GAMEPAD_BUTTON_GUIDE, 14},
         {SDL_GAMEPAD_BUTTON_START, 15},        {SDL_GAMEPAD_BUTTON_LEFT_STICK, 16},
         {SDL_GAMEPAD_BUTTON_RIGHT_STICK, 17},
+        {SDL_GAMEPAD_BUTTON_TOUCHPAD, 18},
     };
     constexpr float TRIGGER_THRESHOLD = 0.1f;
 
-    int gamepad = 0;
-    for (auto& [id, gp] : sdl_gamepads) {
-        if (gamepad >= 4) {
-            break;
+    std::vector<int> connected;
+    for (const auto& [id, gp] : sdl_gamepads) {
+        connected.push_back(static_cast<int>(id));
+    }
+    const ControllerSlots previous_slots = controller_slots;
+    controller_slots.update(connected);
+    slotted_gamepads.store(controller_slots.count(), std::memory_order_relaxed);
+    for (int slot = 0; slot < 4; ++slot) {
+        if (previous_slots.device(slot) != controller_slots.device(slot)) {
+            previous_gamepad_states[slot].fill(false);
         }
-        std::array<bool, 18> state{};
+    }
+    for (auto& [id, gp] : sdl_gamepads) {
+        const int gamepad = controller_slots.slot(static_cast<int>(id));
+        if (gamepad < 0) {
+            continue; // more than four pads
+        }
+        std::array<bool, 19> state{};
         for (const auto& [sdl_btn, btn] : GAMEPAD_BUTTONS) {
             state[btn] = SDL_GetGamepadButton(gp, sdl_btn);
         }
         state[10] = SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) / 32767.0f > TRIGGER_THRESHOLD;
         state[12] = SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) / 32767.0f > TRIGGER_THRESHOLD;
-        for (int btn = 1; btn <= 17; btn++) {
+        for (int btn = 1; btn <= 18; btn++) {
             int key = 10000 + btn;
             bool previous_state = previous_gamepad_states[gamepad][btn];
             if (state[btn] && !previous_state) {
                 local_pressed.push_back(key);
+                local_pressed.push_back(pad_slot_key(gamepad, btn));
             }
             if (!state[btn] && previous_state) {
                 local_released.push_back(key);
+                local_released.push_back(pad_slot_key(gamepad, btn));
             }
             previous_gamepad_states[gamepad][btn] = state[btn];
         }
-        gamepad++;
     }
 
     constexpr float JOYSTICK_AXIS_THRESHOLD = 0.5f;
@@ -584,6 +750,13 @@ void poll_keyboard_once() {
             sdl_prev_axis[state_key] = value;
         }
     }
+
+    // SDL's startup-added event can expose an already-open controller more
+    // than once. One physical edge must not register twice.
+    std::ranges::sort(local_pressed);
+    local_pressed.erase(std::unique(local_pressed.begin(), local_pressed.end()), local_pressed.end());
+    std::ranges::sort(local_released);
+    local_released.erase(std::unique(local_released.begin(), local_released.end()), local_released.end());
 
     // Remember the newest controller press separately from pressed_keys so
     // the keybind screen can read it: the pressed_keys entry is consumed by
@@ -638,7 +811,7 @@ void submit_gamepad_button_press(int button, float strength) {
     pressed_keys.emplace(vkey, std::max(strength, 0.0f));
 }
 
-#ifndef __EMSCRIPTEN__
+#if defined(YATAIDON_HAS_MIDI)
 namespace {
 
     struct MidiPortEvent {
@@ -716,7 +889,7 @@ void start_midi_input(const MidiConfig& config) {
     if (config.device.empty()) {
         return;
     }
-#ifndef __EMSCRIPTEN__
+#if defined(YATAIDON_HAS_MIDI)
     if (midi_input) {
         spdlog::warn("MIDI input listener was already started");
         return;
@@ -800,7 +973,7 @@ void start_midi_input(const MidiConfig& config) {
 }
 
 void process_midi_events() {
-#ifndef __EMSCRIPTEN__
+#if defined(YATAIDON_HAS_MIDI)
     if (!midi_input || !midi_input->events_pending.exchange(false, std::memory_order_acquire)) {
         return;
     }
@@ -864,7 +1037,7 @@ void process_midi_events() {
 }
 
 void shutdown_midi_input() {
-#ifndef __EMSCRIPTEN__
+#if defined(YATAIDON_HAS_MIDI)
     midi_input.reset();
 #endif
 }
@@ -879,6 +1052,19 @@ void input_polling_thread() {
 
 bool check_key_pressed(int key, float* strength) {
     std::scoped_lock lock(input_mutex);
+    if (key != 0 && global_data.config && global_data.config->keys.gamepad_menu_layout) {
+        const bool gameplay = is_gameplay_screen(global_data.current_screen);
+        auto pad = [](int button) { return GAMEPAD_VKEY_BASE + button; };
+        if (key == global_data.config->keys.restart_key && gameplay && pressed_keys.contains(pad(PAD_START))) {
+            key = pad(PAD_START);
+        } else if (key == global_data.config->keys.back_key) {
+            if (pressed_keys.contains(pad(PAD_TOUCHPAD))) {
+                key = pad(PAD_TOUCHPAD);
+            } else if (!gameplay && pressed_keys.contains(pad(PAD_EAST))) {
+                key = pad(PAD_EAST);
+            }
+        }
+    }
     auto it = pressed_keys.find(key);
     if (it != pressed_keys.end()) {
         if (strength) {
@@ -918,6 +1104,11 @@ void shutdown_sdl_joysticks() {
         SDL_CloseGamepad(gp);
     }
     sdl_gamepads.clear();
+    controller_slots = {};
+    slotted_gamepads.store(0, std::memory_order_relaxed);
+    for (auto& state : previous_gamepad_states) {
+        state.fill(false);
+    }
     sdl_prev_button.clear();
     sdl_prev_axis.clear();
     SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
@@ -938,9 +1129,13 @@ bool is_text_input_key(int key) {
            (key >= SDL_SCANCODE_LCTRL && key <= SDL_SCANCODE_RGUI);
 }
 
-void set_keyboard_visible(bool visible) {
+void set_keyboard_visible(bool visible, const std::string& initial_text) {
+    // Read by platforms whose on-screen keyboard is a native dialog that edits the whole text.
+    SDL_SetHint("YATAIDON_TEXT_INPUT_INITIAL", initial_text.c_str());
     keyboard_editing = visible;
-#if defined(PLATFORM_ANDROID) || defined(YATAIDON_PLATFORM_IOS)
+    if (!SDL_HasScreenKeyboardSupport()) {
+        return;
+    }
     SDL_Window* win = main_window();
     if (!win) {
         return;
@@ -952,9 +1147,7 @@ void set_keyboard_visible(bool visible) {
         SDL_StopTextInput(win);
         SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
     }
-#else
-    (void)visible;
-#endif
+    screen_keyboard_started.store(visible, std::memory_order_relaxed);
 }
 
 // Unified keyboard text-field editing. See the declaration in input.h.
@@ -984,6 +1177,9 @@ void sync_text_input() {
 
 TextEditAction poll_text_edit(std::string& text, const std::function<bool(int)>& accept) {
     text_input_wanted = true;
+    if (platform_take_text_replacement()) {
+        text.clear();
+    }
     // Ctrl+V pastes the clipboard (first line only, UTF-8).
     if ((key_down(SDL_SCANCODE_LCTRL) || key_down(SDL_SCANCODE_RCTRL)) && key_pressed(SDL_SCANCODE_V)) {
         char* clip = SDL_GetClipboardText();

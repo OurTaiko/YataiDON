@@ -33,6 +33,7 @@ public:
 
     virtual void confirm() {}
     virtual bool needs_text_input() const { return false; }
+    virtual std::string text_input_value() const { return {}; }
 
     virtual void update(double /*current_time*/) {}
     virtual void move_left() {}
@@ -75,6 +76,7 @@ public:
     void draw() override;
 };
 
+
 class StrOptionBox : public BaseOptionBox {
     std::string value;
     std::string input_string; // used for free-form editing
@@ -91,6 +93,7 @@ public:
 
     void confirm() override;
     bool needs_text_input() const override;
+    std::string text_input_value() const override { return input_string; }
     void update(double current_time) override;
     void move_left() override;
     void move_right() override;

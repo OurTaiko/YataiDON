@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "../gfx.h"
+#include "../../platform/platform.h"
 
 // Static copies: the raylib backend links its own non-static stb_image.
 #define STB_IMAGE_STATIC
@@ -37,6 +38,9 @@ const char* text_format(const char* fmt, ...) {
 
 std::vector<unsigned char> load_file_bytes(const char* path) {
     std::vector<unsigned char> data;
+    if (platform_read_file(path, data)) {
+        return data;
+    }
     FILE* f = std::fopen(path, "rb");
     if (!f) {
         spdlog::warn("FILEIO: [{}] Failed to open file", path);

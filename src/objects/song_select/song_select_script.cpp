@@ -221,7 +221,7 @@ static Rect search_box_rect(const sol::table& skin) {
     float h = 60 * S;
     sol::optional<sol::table> layout;
     if (skin.valid()) {
-        layout = skin["search_box_layout"];
+        layout = skin.get<sol::optional<sol::table>>("search_box_layout");
     }
     if (layout) {
         x = layout->get_or<float>("x", x);
