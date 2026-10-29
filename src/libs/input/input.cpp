@@ -681,6 +681,7 @@ void poll_keyboard_once() {
     constexpr float TRIGGER_THRESHOLD = 0.1f;
 
     std::vector<int> connected;
+    connected.reserve(sdl_gamepads.size());
     for (const auto& [id, gp] : sdl_gamepads) {
         connected.push_back(static_cast<int>(id));
     }
@@ -767,9 +768,9 @@ void poll_keyboard_once() {
     // SDL's startup-added event can expose an already-open controller more
     // than once. One physical edge must not register twice.
     std::ranges::sort(local_pressed);
-    local_pressed.erase(std::unique(local_pressed.begin(), local_pressed.end()), local_pressed.end());
+    local_pressed.erase(std::ranges::unique(local_pressed).begin(), local_pressed.end());
     std::ranges::sort(local_released);
-    local_released.erase(std::unique(local_released.begin(), local_released.end()), local_released.end());
+    local_released.erase(std::ranges::unique(local_released).begin(), local_released.end());
 
     // Remember the newest controller press separately from pressed_keys so
     // the keybind screen can read it: the pressed_keys entry is consumed by
