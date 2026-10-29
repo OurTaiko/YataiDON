@@ -420,8 +420,8 @@ rapidjson::Document read_json_file(const fs::path& file_path) {
     }
 
     const std::string cache_key = file_path.lexically_normal().generic_string();
-    const bool cacheable = skin_json_cache().enabled() &&
-                           (cache_key.starts_with("Skins/") || cache_key.find("/Skins/") != std::string::npos);
+    const bool cacheable =
+        skin_json_cache().enabled() && (cache_key.starts_with("Skins/") || cache_key.contains("/Skins/"));
     if (cacheable) {
         if (auto cached = skin_json_cache().get(cache_key)) {
             rapidjson::Document copy;
