@@ -19,6 +19,7 @@
 #include "libs/parsers/song_parser.h"
 #include "libs/profiler.h"
 #include "libs/screen.h"
+#include "libs/song_library_loader.h"
 #include "libs/video/webcam.h"
 #include "platform/platform.h"
 #include "platform/platform_emscripten.h"
@@ -707,6 +708,7 @@ static int game_main(int argc, char* argv[]) {
     shutdown_sdl_joysticks();
     delete g_loop;
     g_loop = nullptr;
+    get_song_library_loader().stop();
     // Cleanup needs a live SDL/OpenGL context and config.
     webcam.close();
     unload_skin();

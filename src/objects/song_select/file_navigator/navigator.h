@@ -6,6 +6,7 @@
 #include <queue>
 #include <unordered_map>
 
+#include "../../../libs/song_library.h"
 #include "box_song.h"
 #include "genre_bg.h"
 
@@ -32,19 +33,7 @@ private:
     std::vector<fs::path> root_paths;
     std::vector<std::unique_ptr<BaseBox>> items;
     TextureObject* t_background = nullptr;
-    std::map<std::pair<std::string, std::string>, fs::path> song_files;
-    // find_song_by_title's lookup tables over song_files, rebuilt when its size changes: the dojo
-    // looks up every chart of every course (1000+), and each linear pass re-normalized the library
-    std::mutex title_index_mutex;
-    size_t title_index_size = SIZE_MAX;
-    std::unordered_map<std::string, fs::path> title_subtitle_index;  // normalized "title\x1fsubtitle"
-    std::unordered_map<std::string, fs::path> title_only_index;      // normalized title
-    std::vector<std::pair<std::string, fs::path>> normalized_titles; // song_files order
-    // song path -> every title and subtitle in every language, ASCII-folded, for Song Search
-    std::unordered_map<std::string, std::string> song_search_text;
-    // song path -> level per course 0..4 (-1 = course absent), filled by the same scan; the
-    // difficulty filter reads this instead of re-parsing every chart on disk
-    std::unordered_map<std::string, std::array<int, 5>> song_levels;
+    SongLibrary& song_library;
     int open_index;
     bool is_init = false;
     bool is_preloaded = false;
@@ -89,7 +78,6 @@ private:
     void join_prefetch();
     void scan_song_tree(const fs::path& path, std::vector<fs::path>& song_paths,
                         std::unordered_map<std::string, std::vector<std::pair<bool, fs::path>>>& plan);
-    std::thread song_files_thread;
     std::mutex pending_mutex;
     std::queue<std::unique_ptr<BaseBox>> pending_boxes;
     std::queue<std::unique_ptr<BaseBox>> pending_inline_boxes;
@@ -137,7 +125,6 @@ private:
     bool has_child_folders(const fs::path& path);
     bool scan_child_folders(const fs::path& path);
 
-    void wait_for_song_files();
     void enqueue_box(std::unique_ptr<BaseBox> box);
     void enqueue_inline_box(std::unique_ptr<BaseBox> box);
     void parse_song_list(const fs::path& path, const BoxDef& box_def, bool inline_mode);
@@ -169,8 +156,7 @@ public:
     SongSelectScript* script = nullptr;
 
     void join_loader();
-    // `listed`: the chart files under songs_paths when the caller already listed them (the loading screen)
-    void preload(std::vector<fs::path> songs_paths, std::optional<std::vector<fs::path>> listed = std::nullopt);
+    void preload(std::vector<fs::path> songs_paths);
     void init(std::vector<fs::path> songs_paths);
 
     void reset_for_skin_reload();
@@ -179,7 +165,6 @@ public:
     void refresh_scores();
     BoxDef parse_box_def(const fs::path& path);
     static BoxDef parse_box_def_uncached(const fs::path& path);
-    std::atomic<bool> song_files_ready{true};
     bool needs_diff_sort() const { return awaiting_diff_sort; }
     bool diff_sort_ready() { return awaiting_diff_sort; }
     void apply_diff_sort(int course, int level, int order = 1);
@@ -194,9 +179,6 @@ public:
     bool is_song(BaseBox* item);
     BaseBox* get_current_item();
     Statistics get_statistics(const fs::path& path);
-
-    std::optional<fs::path> find_song_by_title(const std::string& title, const std::string& subtitle);
-    size_t song_file_count() const { return song_files.size(); }
 
     void move_left();
     void move_right();
